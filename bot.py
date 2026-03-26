@@ -24,7 +24,12 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-groq_client = AsyncGroq(api_key=GROQ_API_KEY)
+# Initialize groq_client only if key is present to avoid crash on startup
+groq_client = None
+if GROQ_API_KEY:
+    groq_client = AsyncGroq(api_key=GROQ_API_KEY)
+else:
+    print("Warning: GROQ_API_KEY is missing. AI features will not work.")
 
 # Instaloader instance (login not required for public posts but helps)
 L = instaloader.Instaloader(
@@ -74,6 +79,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Naam bata, tera bhavishya dekhta hoon! 🔮")
 
 async def ask_ai(prompt: str, system_prompt: str) -> str:
+    if not groq_client:
+        return "Bhai Groq API Key missing hai! Railway Dashboard mein 'GROQ_API_KEY' add kar do. 🙏"
     try:
         chat_completion = await groq_client.chat.completions.create(
             messages=[
@@ -225,8 +232,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if not BOT_TOKEN:
-        print("Error: BOT_TOKEN is missing in .env")
+        print("Error: BOT_TOKEN is missing! Please add it to your Environment Variables.")
         return
+        
+    if not GROQ_API_KEY:
+        print("Warning: GROQ_API_KEY is missing. AI features are disabled but bot will start.")
         
     app = Application.builder().token(BOT_TOKEN).build()
     
