@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+downloads_*/
+*.zip
+*.mp4
+*.jpg
+*.jpeg
+*.png
+*.webp
+.vscode/
