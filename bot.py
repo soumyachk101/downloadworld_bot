@@ -79,38 +79,52 @@ async def download_video(url: str, download_dir: str, user_id: int, message_id: 
         ydl_opts = {
             'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
             'format': 'best[filesize<50M]/best',
-            'quiet': True,
-            'no_warnings': True,
+            'quiet': False,  # Set to False to see errors
+            'no_warnings': False,
+            'verbose': True,  # Enable verbose output
         }
 
         loop = asyncio.get_event_loop()
         info = await loop.run_in_executor(None, lambda: _extract_info(url, ydl_opts))
 
-        # Find downloaded file
-        files = os.listdir(download_dir)
+        print(f"Download info for {url}: {info}")
+
+        # Find downloaded file - check all files in directory
+        files = []
+        for root, dirs, filenames in os.walk(download_dir):
+            for filename in filenames:
+                filepath = os.path.join(root, filename)
+                files.append(filepath)
+
         if not files:
+            print(f"No files found in {download_dir}")
             return None, None
 
-        video_file = os.path.join(download_dir, files[0])
+        # Find video file (common video extensions)
+        video_extensions = ('.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.mpg', '.mpeg')
+        for filepath in files:
+            if filepath.lower().endswith(video_extensions):
+                print(f"Found video file: {filepath}, size: {os.path.getsize(filepath)} bytes")
+                return filepath, None
 
-        # Try to get thumbnail if available
-        thumbnail = None
-        if info and 'thumbnail' in info:
-            thumb_path = os.path.join(download_dir, 'thumb.jpg')
-            # Download thumbnail would require additional code
-            # For now, return None for thumbnail
-
-        return video_file, thumbnail
+        # If no video file found, maybe files[0] is the only file
+        video_file = files[0]
+        print(f"Using first file as video: {video_file}, size: {os.path.getsize(video_file)} bytes")
+        return video_file, None
 
     except Exception as e:
         print(f"Download error for user {user_id}: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None
 
 
 def _extract_info(url: str, ydl_opts: dict) -> dict:
     """Extract video info in blocking thread."""
     with YoutubeDL(ydl_opts) as ydl:
-        return ydl.extract_info(url, download=True)
+        info = ydl.extract_info(url, download=True)
+        print(f"yt-dlp extracted info: title={info.get('title')}, ext={info.get('ext')}, duration={info.get('duration')}")
+        return info
 
 
 async def download_instagram(url: str, download_dir: str, user_id: int, message_id: int) -> Optional[str]:
@@ -124,9 +138,11 @@ async def download_instagram(url: str, download_dir: str, user_id: int, message_
         # Extract shortcode from URL
         match = re.search(r"instagram\.com/(p|reel)/([^/?]+)", url, re.IGNORECASE)
         if not match:
+            print(f"Instagram URL didn't match pattern: {url}")
             return None
 
         shortcode = match.group(2)
+        print(f"Instagram shortcode: {shortcode}")
 
         # Run instaloader in thread to avoid blocking
         loop = asyncio.get_event_loop()
@@ -135,16 +151,28 @@ async def download_instagram(url: str, download_dir: str, user_id: int, message_
         if not success:
             return None
 
-        # Find downloaded file
+        # Find downloaded file - list all files
+        all_files = []
         for root, dirs, files in os.walk(download_dir):
             for file in files:
-                if file.lower().endswith(('.mp4', '.mov')):
-                    return os.path.join(root, file)
+                filepath = os.path.join(root, file)
+                all_files.append(filepath)
 
+        print(f"All files downloaded: {all_files}")
+
+        # Find video file
+        for filepath in all_files:
+            if filepath.lower().endswith(('.mp4', '.mov', '.avi', '.mkv')):
+                print(f"Found video: {filepath}, size: {os.path.getsize(filepath)} bytes")
+                return filepath
+
+        # No video found, maybe only images
         return None
 
     except Exception as e:
         print(f"Instagram download error for user {user_id}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
