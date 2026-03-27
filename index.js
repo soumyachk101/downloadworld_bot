@@ -51,25 +51,34 @@ const askAi = async (prompt, systemPrompt) => {
 // --- DOWNLOAD LOGIC ---
 
 const downloadMedia = async (url, outputDir, audioOnly = false) => {
-  const options = {
-    output: `${outputDir}/%(id)s.%(ext)s`,
-    format: audioOnly ? 'bestaudio/best' : 'bestvideo[filesize<45M]+bestaudio/best[filesize<45M]',
-    noWarnings: true,
-    verbose: true,
-  };
+  return new Promise((resolve, reject) => {
+    const args = [
+      url,
+      '--output', `${outputDir}/%(id)s.%(ext)s`,
+      '--format', audioOnly ? 'bestaudio/best' : 'bestvideo[filesize<45M]+bestaudio/best[filesize<45M]',
+      '--no-warnings',
+    ];
 
-  if (await fs.pathExists("cookies.txt")) {
-    options.cookiefile = "cookies.txt";
-    console.log("DEBUG: Using cookies.txt for yt-dlp");
-  }
+    if (fs.existsSync("cookies.txt")) {
+      args.push('--cookiefile', 'cookies.txt');
+      console.log("DEBUG: Using cookies.txt for yt-dlp");
+    }
 
-  if (audioOnly) {
-    options.extractAudio = true;
-    options.audioFormat = 'mp3';
-    options.audioQuality = '192';
-  }
+    if (audioOnly) {
+      args.push('--extract-audio', '--audio-format', 'mp3', '--audio-quality', '192');
+    }
 
-  return ytDlp(url, options);
+    console.log(`DEBUG: Executing yt-dlp with args: ${args.join(' ')}`);
+    const ls = spawn('yt-dlp', args);
+
+    ls.stdout.on('data', (data) => console.log(`yt-dlp stdout: ${data}`));
+    ls.stderr.on('data', (data) => console.error(`yt-dlp stderr: ${data}`));
+
+    ls.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`yt-dlp exited with code ${code}`));
+    });
+  });
 };
 
 // --- HANDLERS ---
