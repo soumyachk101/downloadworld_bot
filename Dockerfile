@@ -1,7 +1,8 @@
 FROM node:18-alpine
 
-# Install curl and ffmpeg via Alpine package manager
-RUN apk add --no-cache curl ffmpeg
+# Install all required packages: curl, ffmpeg, and yt-dlp from Alpine repos
+# yt-dlp from Alpine repos works with musl libc (Alpine's libc) unlike standalone binaries
+RUN apk add --no-cache curl ffmpeg yt-dlp
 
 WORKDIR /app
 
