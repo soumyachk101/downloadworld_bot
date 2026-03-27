@@ -195,22 +195,22 @@ async def translate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def download_video(url: str, output_path: str, audio_only: bool = False):
     ydl_opts = {
-        # ✅ FIX 5: Use max_filesize option instead of unreliable format filter
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' if not audio_only else 'bestaudio/best',
+        # Robust format selection: try to stay under 45MB to be safe for Telegram's 50MB limit
+        'format': 'bestvideo[filesize<45M]+bestaudio/best[filesize<45M]' if not audio_only else 'bestaudio/best',
         'outtmpl': f'{output_path}/%(id)s.%(ext)s',
         'quiet': False,
         'no_warnings': False,
         'verbose': True,
-        'max_filesize': 0, # Placeholder to fix linting type inference
+        'max_filesize': 50 * 1024 * 1024, # Hard cap for safety
     }
     
-    # Check for cookies.txt
-    if os.path.exists("cookies.txt"):
-        ydl_opts['cookiefile'] = "cookies.txt"
-        print("Using cookies.txt for yt-dlp")
-
-    if not audio_only:
-        ydl_opts['max_filesize'] = 50 * 1024 * 1024  # Hard 50MB cap
+    # Check for cookies.txt in the current directory or project root
+    cookie_path = "cookies.txt"
+    if os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
+        print(f"DEBUG: Using {cookie_path} for yt-dlp authentication.")
+    else:
+        print("DEBUG: cookies.txt not found. YouTube may block data center IPs.")
 
     if audio_only:
         ydl_opts['postprocessors'] = [{
