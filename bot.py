@@ -188,7 +188,7 @@ async def ask_ai(prompt: str, mode: str) -> str:
 
     except Exception as e:
         print(f"Groq API error: {e}")
-        return f"❌ AI error: {str(e)[:100]}. Phir se try kar!")
+        return f"❌ AI error: {str(e)[:100]}. Phir se try kar!"
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
