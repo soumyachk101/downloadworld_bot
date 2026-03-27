@@ -251,8 +251,12 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await status_msg.edit_text("Bhai MP3 download nahi ho payi. Link check kar! 😔")
     except Exception as e:
-        print(f"MP3 Error: {e}")
-        await status_msg.edit_text("Bhai error aagaya MP3 banane mein. 🙏")
+        error_msg = str(e)
+        print(f"MP3 FULL error: {type(e).__name__}: {error_msg}")
+        if "Sign in to confirm" in error_msg or "bot" in error_msg.lower() or "403" in error_msg:
+             await status_msg.edit_text("Bhai, YouTube ne Railway ko block kar diya hai! 🛑\n\nFix karne ke liye `cookies.txt` file upload karo. (Instructions ke liye /start dekho) 🙏")
+        else:
+            await status_msg.edit_text("Bhai error aagaya MP3 banane mein. 🙏")
     finally:
         cleanup(download_dir)
 
@@ -329,8 +333,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         await status_msg.edit_text("Bhai video 50MB se badi hai, main sirf 50MB tak ka bhej sakta hoon! 😔")
                 except Exception as e:
-                    print(f"ytdlp FULL error: {type(e).__name__}: {e}")
-                    await status_msg.edit_text("Bhai video download nahi hui. Private ho sakti hai! 😔")
+                    error_msg = str(e)
+                    print(f"ytdlp FULL error: {type(e).__name__}: {error_msg}")
+                    if "Sign in to confirm" in error_msg or "bot" in error_msg.lower() or "403" in error_msg:
+                        await status_msg.edit_text("Bhai, YouTube ne is server ko block kar diya hai! 🛑\n\nDownload ke liye `cookies.txt` file upload karni hogi. 🙏")
+                    else:
+                        await status_msg.edit_text("Bhai video download nahi hui. Private ho sakti hai! 😔")
             else:
                 await status_msg.edit_text("Bhai is platform ka link abhi support nahi karta main. Sirf YT, Insta, Twitter aur FB bhej! 🙏")
         except Exception as e:
