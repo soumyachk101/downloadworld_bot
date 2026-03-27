@@ -1,9 +1,0 @@
-python-telegram-bot==21.5
-yt-dlp
-instaloader
-groq
-deep-translator
-apscheduler
-python-dotenv
-asyncio
-aiohttp
