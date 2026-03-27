@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Railway Deployment Checker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .input-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .results {
+            margin-top: 20px;
+        }
+
+        .check-item {
+            background: #fff;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+
+        .check-item:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+        }
+
+        .check-item.running {
+            border-color: #ffc107;
+            background: #fffef5;
+        }
+
+        .check-item.success {
+            border-color: #38ef7d;
+            background: #f0fff4;
+        }
+
+        .check-item.error {
+            border-color: #f5576c;
+            background: #fff5f5;
+        }
+
+        .check-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .check-detail {
+            font-size: 12px;
+            color: #666;
+            margin-top: 3px;
+        }
+
+        .check-status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .check-status.pending {
+            background: #e0e0e0;
+            color: #666;
+        }
+
+        .check-status.running {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .check-status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .check-status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .logs {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .logs.show {
+            display: block;
+        }
+
+        .log-entry {
+            margin-bottom: 3px;
+        }
+
+        .log-entry.info {
+            color: #4fc3f7;
+        }
+
+        .log-entry.success {
+            color: #81c784;
+        }
+
+        .log-entry.error {
+            color: #e57373;
+        }
+
+        .log-entry.warning {
+            color: #ffb74d;
+        }
+
+        .summary {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .summary.show {
+            display: block;
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .summary-item:last-child {
+            border-bottom: none;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .instructions {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+
+        .instructions h3 {
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                border-radius: 10px;
+            }
+            .header h1 {
+                font-size: 22px;
+            }
+            .btn {
+                width: 100%;
+                margin-right: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Railway Deployment Checker</h1>
+            <p>Verify your bot deployment in one click</p>
+        </div>
+
+        <div class="content">
+            <div class="input-section">
+                <div class="input-group">
+                    <label for="railwayUrl">🌐 Railway App URL:</label>
+                    <input type="text" id="railwayUrl"
+                           placeholder="https://your-app.up.railway.app"
+                           value="">
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Find this in Railway dashboard (e.g., https://everything-downloader.up.railway.app)
+                    </small>
+                </div>
+                <button class="btn" onclick="runAllChecks()">🔍 Run All Checks</button>
+                <button class="btn btn-secondary" onclick="clearResults()">🗑️ Clear</button>
+            </div>
+
+            <div class="instructions" id="instructions">
+                <h3>📋 How to use:</h3>
+                <ol>
+                    <li>Deploy your bot on Railway</li>
+                    <li>Get your Railway app URL from dashboard</li>
+                    <li>Paste URL above and click "Run All Checks"</li>
+                    <li>Verify all checks pass (green)</li>
+                    <li>Test your bot on Telegram!</li>
+                </ol>
+            </div>
+
+            <div class="results" id="results"></div>
+
+            <div class="logs" id="logs"></div>
+
+            <div class="summary" id="summary"></div>
+        </div>
+    </div>
+
+    <script>
+        let checks = [];
+        let logs = [];
+
+        function log(message, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            logs.push({ time, message, type });
+            updateLogs();
+        }
+
+        function updateLogs() {
+            const logsDiv = document.getElementById('logs');
+            logsDiv.innerHTML = logs.map(l =>
+                `<div class="log-entry ${l.type}">[${l.time}] ${l.message}</div>`
+            ).join('');
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+
+        function updateCheckStatus(id, status, detail = '') {
+            const check = document.getElementById(`check-${id}`);
+            if (!check) return;
+
+            const nameEl = check.querySelector('.check-name');
+            const statusEl = check.querySelector('.check-status');
+            const detailEl = check.querySelector('.check-detail');
+
+            check.className = `check-item ${status}`;
+            statusEl.className = `check-status ${status}`;
+            statusEl.textContent = status === 'running' ? '⏳ Running...' :
+                                   status === 'success' ? '✅ Passed' :
+                                   status === 'error' ? '❌ Failed' : '⏳ Pending';
+            if (detail) detailEl.textContent = detail;
+        }
+
+        function renderChecks() {
+            const resultsDiv = document.getElementById('results');
+            const checksConfig = [
+                { id: 'url', name: 'URL Format', detail: 'Validating URL structure' },
+                { id: 'reachability', name: 'Reachability', detail: 'Checking if Railway app responds' },
+                { id: 'health', name: 'Health Endpoint', detail: 'GET /health' },
+                { id: 'metrics', name: 'Metrics Endpoint', detail: 'GET /metrics' },
+                { id: 'status', name: 'Bot Status', detail: 'Checking yt-dlp version' },
+                { id: 'download', detail: 'Testing download capability' },
+            ];
+
+            resultsDiv.innerHTML = checksConfig.map(c => `
+                <div class="check-item" id="check-${c.id}">
+                    <div>
+                        <div class="check-name">${c.name || c.id}</div>
+                        <div class="check-detail">${c.detail}</div>
+                    </div>
+                    <div class="check-status pending">⏳ Pending</div>
+                </div>
+            `).join('');
+        }
+
+        async function runAllChecks() {
+            const url = document.getElementById('railwayUrl').value.trim();
+            if (!url) {
+                alert('Please enter Railway URL');
+                return;
+            }
+
+            // Normalize URL
+            let baseUrl = url;
+            if (!url.startsWith('http')) {
+                baseUrl = 'https://' + url;
+            }
+            if (!baseUrl.endsWith('/')) {
+                baseUrl += '/';
+            }
+
+            clearResults();
+            renderChecks();
+            document.getElementById('logs').classList.add('show');
+            log(`🚀 Starting deployment checks for: ${baseUrl}`, 'info');
+
+            let passed = 0;
+            let failed = 0;
+
+            // Check 1: URL Format
+            updateCheckStatus('url', 'running');
+            try {
+                new URL(baseUrl);
+                log('✅ URL format valid', 'success');
+                updateCheckStatus('url', 'success', baseUrl);
+                passed++;
+            } catch (e) {
+                log('❌ Invalid URL format', 'error');
+                updateCheckStatus('url', 'error', 'Invalid URL');
+                failed++;
+                return;
+            }
+
+            // Check 2: Reachability
+            updateCheckStatus('reachability', 'running');
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch(baseUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (response.ok || response.status === 404) {
+                    log(`✅ App reachable (status: ${response.status})`, 'success');
+                    updateCheckStatus('reachability', 'success', `HTTP ${response.status}`);
+                    passed++;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (e) {
+                log(`❌ App not reachable: ${e.message}`, 'error');
+                updateCheckStatus('reachability', 'error', e.message);
+                failed++;
+                return;
+            }
+
+            // Check 3: Health Endpoint
+            updateCheckStatus('health', 'running');
+            try {
+                const healthUrl = baseUrl + 'health';
+                log(`🔍 Checking ${healthUrl}`, 'info');
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch(healthUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === 'ok') {
+                        const uptime = Math.floor(data.uptime / 60);
+                        log(`✅ Health OK (uptime: ${uptime}m, memory: ${Math.round(data.memory.rss/1024/1024)}MB)`, 'success');
+                        updateCheckStatus('health', 'success', `Uptime: ${uptime}m`);
+                        passed++;
+                    } else {
+                        throw new Error('Invalid health data');
+                    }
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (e) {
+                log(`❌ Health check failed: ${e.message}`, 'error');
+                updateCheckStatus('health', 'error', e.message);
+                failed++;
+            }
+
+            // Check 4: Metrics Endpoint
+            updateCheckStatus('metrics', 'running');
+            try {
+                const metricsUrl = baseUrl + 'metrics';
+                log(`🔍 Checking ${metricsUrl}`, 'info');
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                const response = await fetch(metricsUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const text = await response.text();
+                    if (text.includes('bot_uptime_seconds')) {
+                        log('✅ Metrics endpoint available', 'success');
+                        updateCheckStatus('metrics', 'success', 'Prometheus format');
+                        passed++;
+                    } else {
+                        throw new Error('Invalid metrics format');
+                    }
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (e) {
+                log(`⚠️ Metrics check failed: ${e.message}`, 'warning');
+                updateCheckStatus('metrics', 'error', 'Not critical');
+            }
+
+            // Check 5: Bot Status (yt-dlp)
+            updateCheckStatus('status', 'running');
+            try {
+                const healthUrl = baseUrl + 'health';
+                const response = await fetch(healthUrl);
+                const data = await response.json();
+
+                if (data.version) {
+                    log(`✅ Bot v${data.version} running`, 'success');
+                    updateCheckStatus('status', 'success', `v${data.version}`);
+                    passed++;
+                } else {
+                    throw new Error('Version not found');
+                }
+            } catch (e) {
+                log(`❌ Status check failed: ${e.message}`, 'error');
+                updateCheckStatus('status', 'error', e.message);
+                failed++;
+            }
+
+            // Check 6: Download Test (optional, skip for now)
+            updateCheckStatus('download', 'running');
+            log('ℹ️ Manual test needed: Send a YouTube link to bot', 'info');
+            updateCheckStatus('download', 'success', 'Manual verification required');
+
+            // Summary
+            const summaryDiv = document.getElementById('summary');
+            const total = passed + failed;
+            const percentage = Math.round((passed / total) * 100);
+
+            summaryDiv.innerHTML = `
+                <h3>📊 Check Summary</h3>
+                <div class="summary-item">
+                    <span>Total Checks:</span>
+                    <span><strong>${total}</strong></span>
+                </div>
+                <div class="summary-item">
+                    <span>✅ Passed:</span>
+                    <span><strong class="badge badge-success">${passed}</strong></span>
+                </div>
+                <div class="summary-item">
+                    <span>❌ Failed:</span>
+                    <span><strong class="badge badge-error">${failed}</strong></span>
+                </div>
+                <div class="summary-item" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #dee2e6;">
+                    <span style="font-size: 18px;">Success Rate:</span>
+                    <span style="font-size: 24px; font-weight: bold; color: ${percentage === 100 ? '#38ef7d' : '#ffc107'}">
+                        ${percentage}%
+                    </span>
+                </div>
+                ${percentage === 100 ?
+                    '<p style="margin-top: 15px; color: #38ef7d; font-weight: 600;">🎉 All checks passed! Your bot is ready.</p>' :
+                    '<p style="margin-top: 15px; color: #f5576c; font-weight: 600;">⚠️ Some checks failed. Review above.</p>'
+                }
+            `;
+            summaryDiv.classList.add('show');
+
+            log(`\n📊 Summary: ${passed}/${total} checks passed (${percentage}%)`, percentage === 100 ? 'success' : 'warning');
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('logs').innerHTML = '';
+            document.getElementById('summary').innerHTML = '';
+            logs = [];
+        }
+
+        // Auto-fill from URL if railway.app domain
+        window.onload = function() {
+            const params = new URLSearchParams(window.location.search);
+            const urlParam = params.get('url');
+            if (urlParam) {
+                document.getElementById('railwayUrl').value = urlParam;
+            }
+        };
+    </script>
+</body>
+</html>

@@ -35,6 +35,8 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const MAX_SIZE     = 50 * 1024 * 1024;
 const PORT         = process.env.PORT || 3000; // Railway health check port
 const NODE_ENV     = process.env.NODE_ENV || 'production';
+const COOKIES_B64  = process.env.COOKIES_B64; // Base64 encoded cookies.txt (optional)
+const RATE_LIMIT   = parseInt(process.env.RATE_LIMIT || '5'); // Max downloads per user per minute
 
 // Validate critical environment variables
 function validateConfig() {
@@ -48,6 +50,10 @@ function validateConfig() {
 
   if (GROQ_API_KEY && !/^gsk_[\w-]+$/.test(GROQ_API_KEY)) {
     errors.push('GROQ_API_KEY format looks invalid');
+  }
+
+  if (COOKIES_B64 && !/^[A-Za-z0-9+/=]+$/.test(COOKIES_B64)) {
+    errors.push('COOKIES_B64 format invalid (should be base64 encoded)');
   }
 
   if (errors.length > 0) {
@@ -104,6 +110,38 @@ function retry(operation, maxRetries = 3, delay = 1000) {
   });
 }
 
+// Simple in-memory rate limiter
+const userDownloads = new Map(); // userId -> [{timestamp}] array
+
+function checkRateLimit(userId) {
+  const now = Date.now();
+  const window = 60 * 1000; // 1 minute window
+  const userRecord = userDownloads.get(userId) || [];
+
+  // Clean old entries
+  const recent = userRecord.filter(t => now - t < window);
+
+  if (recent.length >= RATE_LIMIT) {
+    const waitTime = Math.ceil((recent[0] + window - now) / 1000);
+    return { allowed: false, wait: waitTime };
+  }
+
+  // Add current timestamp
+  recent.push(now);
+  userDownloads.set(userId, recent);
+
+  // Cleanup old records every 100 requests
+  if (Object.keys(userDownloads).length > 100) {
+    for (const [uid, times] of userDownloads.entries()) {
+      const filtered = times.filter(t => now - t < window);
+      if (filtered.length === 0) userDownloads.delete(uid);
+      else userDownloads.set(uid, filtered);
+    }
+  }
+
+  return { allowed: true };
+}
+
 async function ai(prompt, sys) {
   if (!groq) return 'GROQ_API_KEY set nahi hai bhai! 🙏';
   try {
@@ -132,14 +170,48 @@ function isBlock(e) {
   return m.includes('sign in') || m.includes('confirm') || m.includes('403') || m.includes('youtube block');
 }
 
+/* ─────────────── Cookies Management ─────────────────────────────── */
+
+async function setupCookies(dir) {
+  // Priority: 1) COOKIES_B64 env var, 2) cookies.txt file in cwd
+  if (COOKIES_B64) {
+    try {
+      const cookiesContent = Buffer.from(COOKIES_B64, 'base64').toString('utf-8');
+      const cookiesPath = path.join(dir, 'cookies.txt');
+      await fs.writeFile(cookiesPath, cookiesContent);
+      console.log('🍪 Cookies loaded from COOKIES_B64 env var');
+      return cookiesPath;
+    } catch (e) {
+      console.error('❌ Failed to decode COOKIES_B64:', e.message);
+      return null;
+    }
+  }
+
+  if (fs.existsSync('cookies.txt')) {
+    console.log('🍪 Using cookies.txt from current directory');
+    return 'cookies.txt';
+  }
+
+  return null;
+}
+
 /* ─────────────── yt-dlp download (with retry) ───────────────────── */
 
-function ytdlp(url, dir, audio = false) {
+function ytdlp(url, dir, audio = false, cookiesPath = null) {
   const operation = () => {
     return new Promise((resolve, reject) => {
-      const fmt = audio
-        ? 'bestaudio[ext=m4a]/bestaudio/best'
-        : 'bestvideo[filesize<50M]+bestaudio/best[filesize<50M]/best';
+      // Determine format based on URL/platform
+      let fmt;
+      if (audio) {
+        fmt = 'bestaudio[ext=m4a]/bestaudio/best';
+      } else {
+        // Instagram and some platforms need different approach
+        if (url.includes('instagram')) {
+          fmt = 'bestvideo+bestaudio/best';
+        } else {
+          fmt = 'bestvideo[filesize<50M]+bestaudio/best[filesize<50M]/best';
+        }
+      }
 
       const args = [
         url,
@@ -150,43 +222,53 @@ function ytdlp(url, dir, audio = false) {
         '-f', fmt,
         '--no-check-certificate',
         '--geo-bypass',
+        '--geo-bypass-country', 'IN', // India-friendly
         '--retries', '3',
         '--fragment-retries', '3',
         '--file-access-retries', '3',
         '--extractor-retries', '3',
-        '--continue', // Resume partial downloads
+        '--continue',
         '--no-overwrites',
+        '--socket-timeout', '30',
+        '--http-headers', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       ];
 
-      if (fs.existsSync('cookies.txt')) {
-        args.push('--cookies', 'cookies.txt');
-        console.log('🍪 Using cookies.txt for authentication');
+      // Add cookies if available
+      if (cookiesPath) {
+        args.push('--cookies', cookiesPath);
       }
 
       if (audio) {
         args.push('-x', '--audio-format', 'mp3', '--audio-quality', '192K');
-      }
-
-      // Additional options for better compatibility
-      if (audio) {
         args.push('--prefer-ffmpeg');
       }
 
-      console.log(`⬇ yt-dlp: downloading ${audio ? 'audio' : 'video'} from ${url.substring(0, 50)}...`);
+      // Platform-specific optimizations
+      if (url.includes('instagram')) {
+        args.push('--extractor-args', 'instagram:api_key=ikhjqqweoo6el8w'); // Public API key (may need updates)
+      }
+
+      console.log(`⬇ yt-dlp: downloading ${audio ? 'audio' : 'video'} from ${url.substring(0, 60)}...`);
 
       const p = execFile('yt-dlp', args, {
-        timeout: 300_000, // 5 minutes
-        maxBuffer: 1024 * 1024, // 1MB buffer
+        timeout: 300_000,
+        maxBuffer: 1024 * 1024,
       }, (err, out, stderr) => {
-        if (out) console.log(`   📤 yt-dlp: ${out.trim()}`);
-        if (stderr) console.error(`   ⚠️ yt-dlp: ${stderr.trim()}`);
+        if (out) {
+          const lines = out.trim().split('\n').filter(l => l.trim());
+          lines.forEach(line => console.log(`   📤 ${line.substring(0, 80)}`));
+        }
+        if (stderr) {
+          const errors = stderr.trim().split('\n').filter(l => l.includes('ERROR') || l.includes('FATAL'));
+          errors.forEach(line => console.error(`   ⚠️ ${line.substring(0, 80)}`));
+        }
 
         if (err) {
           const errorMsg = (stderr || err.message).trim();
-          console.error(`   ❌ yt-dlp failed: ${errorMsg}`);
+          console.error(`   ❌ yt-dlp failed: ${errorMsg.substring(0, 100)}`);
           reject(new Error(errorMsg));
         } else {
-          console.log(`   ✅ yt-dlp completed successfully`);
+          console.log(`   ✅ yt-dlp completed`);
           resolve();
         }
       });
@@ -198,22 +280,19 @@ function ytdlp(url, dir, audio = false) {
 
       p.stderr.on('data', (data) => {
         const msg = data.toString();
-        // Only log error-level messages, not warnings
         if (msg.includes('ERROR') || msg.includes('FATAL')) {
-          console.error(`   ⚠️ yt-dlp error: ${msg.trim()}`);
+          console.error(`   ⚠️ yt-dlp error: ${msg.trim().substring(0, 100)}`);
         }
       });
     });
   };
 
-  // Retry logic for transient failures
   return retry(operation, 2, 2000).catch(err => {
-    // Check for specific error patterns
-    if (err.message.includes('sign in') ||
-        err.message.includes('confirm') ||
-        err.message.includes('403') ||
-        err.message.includes('unavailable')) {
-      throw new Error('YOUTUBE_BLOCK: ' + err.message);
+    const msg = err.message.toLowerCase();
+    if (msg.includes('sign in') || msg.includes('confirm') || msg.includes('403') ||
+        msg.includes('unavailable') || msg.includes('rate-limit') ||
+        msg.includes('login required') || msg.includes('private video')) {
+      throw new Error('ACCESS_REQUIRED: ' + err.message);
     }
     throw err;
   });
@@ -281,18 +360,27 @@ bot.command('mp3', async ctx => {
   const url = ctx.message.text.split(' ')[1];
   if (!url) return ctx.reply('Example: /mp3 https://youtu.be/...');
 
+  // Rate limit check
+  const rateCheck = checkRateLimit(ctx.from.id);
+  if (!rateCheck.allowed) {
+    return ctx.reply(`⏳Rate limit! ${rateCheck.wait}s wait karein.`);
+  }
+
   const s   = await ctx.reply('⏳ MP3 download ho raha hai …');
   const dir = path.join('/tmp', `mp3_${ctx.from.id}_${Date.now()}`);
   await fs.ensureDir(dir);
 
   try {
-    await ytdlp(url, dir, true);
+    const cookiesPath = await setupCookies(dir);
+    await ytdlp(url, dir, true, cookiesPath);
     await send(ctx, s.message_id, dir, true);
   } catch (e) {
     console.error('mp3:', e.message);
-    await edit(ctx, s.message_id, isBlock(e)
-      ? 'YouTube block! 🛑 cookies.txt upload karo.'
-      : `Error: ${e.message.slice(0, 200)}`);
+    let errorMsg = e.message.slice(0, 200);
+    if (e.message.startsWith('ACCESS_REQUIRED') || isBlock(e)) {
+      errorMsg = 'Access required! 🍪 Cookies chahiye ya private video hai.\nUpload cookies.txt Railway pe.';
+    }
+    await edit(ctx, s.message_id, errorMsg);
   } finally { await clean(dir); }
 });
 
@@ -412,18 +500,27 @@ bot.on('text', async ctx => {
   const u = txt.match(/https?:\/\/[^\s]+/);
   if (!u) return ctx.reply('Link bhej ya /start se shuru kar! 🙏');
 
+  // Rate limit check
+  const rateCheck = checkRateLimit(ctx.from.id);
+  if (!rateCheck.allowed) {
+    return ctx.reply(`⏳ Slow down! ${rateCheck.wait}s wait karein.`);
+  }
+
   const s   = await ctx.reply('⏳ Download ho raha hai …');
   const dir = path.join('/tmp', `dl_${ctx.from.id}_${Date.now()}`);
   await fs.ensureDir(dir);
 
   try {
-    await ytdlp(u[0], dir);
+    const cookiesPath = await setupCookies(dir);
+    await ytdlp(u[0], dir, false, cookiesPath);
     await send(ctx, s.message_id, dir);
   } catch (e) {
     console.error('dl:', e.message);
-    await edit(ctx, s.message_id, isBlock(e)
-      ? 'YouTube block! 🛑 cookies.txt upload karo.'
-      : `Error: ${e.message.slice(0, 200)}`);
+    let errorMsg = e.message.slice(0, 200);
+    if (e.message.startsWith('ACCESS_REQUIRED') || isBlock(e)) {
+      errorMsg = 'Access required! 🍪 Upload cookies.txt Railway dashboard se.\n\nSteps:\n1. Instagram/Youtube pe login karein\n2. cookies.txt export karein\n3. Railway files mein upload karein\n4. Redeploy karein';
+    }
+    await edit(ctx, s.message_id, errorMsg);
   } finally { await clean(dir); }
 });
 
