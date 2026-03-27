@@ -1,8 +1,11 @@
 {
   "name": "everything-downloader-bot",
   "version": "2.0.0",
-  "description": "Telegram Media Downloader + AI Bot (Node.js)",
+  "description": "Telegram Media Downloader + AI Bot",
   "main": "index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node index.js"
   },

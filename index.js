@@ -1,344 +1,295 @@
+/**
+ * Everything Downloader TG Bot — v2.0
+ *
+ * Production-grade Telegram bot running on Node.js / Railway.
+ * Downloads media from YouTube, Instagram, Twitter, Facebook via yt-dlp.
+ * AI features powered by Groq (Llama 3.1).
+ *
+ * Key design decisions
+ * ────────────────────
+ * 1. yt-dlp standalone binary is downloaded at boot using Node's native
+ *    fetch(). This means ZERO dependency on Python, pip, or curl at runtime.
+ *    Only ffmpeg (via nixpacks) is needed for muxing.
+ *
+ * 2. Telegraf session middleware stores per-user AI mode state.
+ *
+ * 3. All downloads go to /tmp and are cleaned up in finally blocks.
+ *
+ * 4. Every spawn / execFile has an error handler so the process never
+ *    crashes on ENOENT.
+ */
+
+'use strict';
+
 const { Telegraf, Markup, session } = require('telegraf');
-const Groq = require('groq-sdk');
-const { translate } = require('google-translate-api-x');
-const schedule = require('node-schedule');
-const path = require('path');
-const fs = require('fs-extra');
-const { execSync, execFile } = require('child_process');
+const Groq                          = require('groq-sdk');
+const { translate }                 = require('google-translate-api-x');
+const schedule                      = require('node-schedule');
+const path                          = require('path');
+const fs                            = require('fs-extra');
+const { execFile, execSync }        = require('child_process');
+const { pipeline }                  = require('stream/promises');
+const { createWriteStream }         = require('fs');
 require('dotenv').config();
 
-// ═══════════════════════════════════════════
-//  CONFIG
-// ═══════════════════════════════════════════
+/* ──────────────────────────── Config ──────────────────────────── */
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
+const BOT_TOKEN    = process.env.BOT_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
-const YT_DLP_BIN = '/tmp/yt-dlp';
+const MAX_SIZE     = 50 * 1024 * 1024;          // Telegram 50 MB limit
+const YT_DLP       = '/tmp/yt-dlp';             // standalone binary path
+const YT_DLP_URL   = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
 
-if (!BOT_TOKEN) {
-  console.error('❌ BOT_TOKEN missing!');
-  process.exit(1);
-}
+if (!BOT_TOKEN) { console.error('❌ BOT_TOKEN missing'); process.exit(1); }
 
-const bot = new Telegraf(BOT_TOKEN);
+const bot  = new Telegraf(BOT_TOKEN);
 const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
-// ═══════════════════════════════════════════
-//  INSTALL yt-dlp STANDALONE BINARY
-//  No Python needed! Self-contained executable.
-// ═══════════════════════════════════════════
+/* ──────────────── yt-dlp binary installer ─────────────────────── */
 
-function installYtDlp() {
-  if (fs.existsSync(YT_DLP_BIN)) {
-    console.log('✅ yt-dlp binary already exists at', YT_DLP_BIN);
-    return true;
+async function installYtDlp() {
+  if (await fs.pathExists(YT_DLP)) {
+    console.log('✅ yt-dlp already present');
+    return;
   }
-  console.log('📥 Downloading yt-dlp standalone binary...');
+
+  console.log('📥 Downloading yt-dlp standalone binary …');
+  const res = await fetch(YT_DLP_URL, { redirect: 'follow' });
+  if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
+
+  await pipeline(res.body, createWriteStream(YT_DLP));
+  await fs.chmod(YT_DLP, 0o755);
+
   try {
-    execSync(
-      `curl -L -o ${YT_DLP_BIN} https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp && chmod +x ${YT_DLP_BIN}`,
-      { stdio: 'inherit', timeout: 60000 }
-    );
-    console.log('✅ yt-dlp installed at', YT_DLP_BIN);
-    // Print version to verify
-    execSync(`${YT_DLP_BIN} --version`, { stdio: 'inherit' });
-    return true;
-  } catch (e) {
-    console.error('❌ Failed to download yt-dlp:', e.message);
-    return false;
+    const ver = execSync(`${YT_DLP} --version`, { encoding: 'utf8' }).trim();
+    console.log(`✅ yt-dlp ${ver} ready`);
+  } catch {
+    console.log('✅ yt-dlp downloaded (version check skipped)');
   }
 }
 
-// ═══════════════════════════════════════════
-//  SESSION MIDDLEWARE
-// ═══════════════════════════════════════════
+/* ──────────────── Session middleware ───────────────────────────── */
 
 bot.use(session());
 
-// ═══════════════════════════════════════════
-//  UTILITIES
-// ═══════════════════════════════════════════
+/* ──────────────── Utility helpers ─────────────────────────────── */
 
-async function cleanup(dir) {
-  try { await fs.remove(dir); } catch (_) { /* ignore */ }
+const cleanup = (dir) => fs.remove(dir).catch(() => {});
+
+async function editMsg(ctx, id, text) {
+  try { await ctx.telegram.editMessageText(ctx.chat.id, id, null, text); }
+  catch { /* deleted / unchanged */ }
 }
 
-async function editStatus(ctx, msgId, text) {
-  try {
-    await ctx.telegram.editMessageText(ctx.chat.id, msgId, null, text);
-  } catch (_) { /* message may be deleted */ }
+async function askAi(prompt, system) {
+  if (!groq) return 'GROQ_API_KEY set nahi hai bhai! 🙏';
+  const r = await groq.chat.completions.create({
+    messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }],
+    model: 'llama-3.1-8b-instant',
+  });
+  return r.choices[0]?.message?.content ?? 'AI ne kuch nahi bola 🤷';
 }
 
-async function askAi(userPrompt, systemPrompt) {
-  if (!groq) return 'Bhai GROQ_API_KEY set nahi hai! 🙏';
-  try {
-    const res = await groq.chat.completions.create({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      model: 'llama-3.1-8b-instant',
-    });
-    return res.choices[0].message.content;
-  } catch (err) {
-    console.error('Groq error:', err.message);
-    return 'Bhai AI abhi busy hai, baad mein try kar! 🙏';
+async function findFiles(dir) {
+  const out = [];
+  for (const e of await fs.readdir(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    e.isDirectory() ? out.push(...await findFiles(p)) : out.push(p);
   }
+  return out;
 }
 
-async function walkDir(dir) {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  const files = [];
-  for (const e of entries) {
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) files.push(...(await walkDir(full)));
-    else files.push(full);
-  }
-  return files;
+function ytBlock(err) {
+  const m = (err?.message || '').toLowerCase();
+  return m.includes('sign in') || m.includes('confirm') || m.includes('403');
 }
 
-function isYouTubeBlock(err) {
-  const m = (err.message || '').toLowerCase();
-  return m.includes('sign in to confirm') || m.includes('403') || m.includes('bot');
-}
+/* ──────────────── Download via yt-dlp ─────────────────────────── */
 
-// ═══════════════════════════════════════════
-//  DOWNLOAD – uses standalone yt-dlp binary
-// ═══════════════════════════════════════════
-
-function downloadMedia(url, outputDir, audioOnly = false) {
+function download(url, dir, audio = false) {
   return new Promise((resolve, reject) => {
-    // Re-download binary if somehow deleted
-    if (!fs.existsSync(YT_DLP_BIN)) {
-      try { installYtDlp(); } catch (_) {}
-    }
+    const fmt = audio
+      ? 'bestaudio/best'
+      : 'bestvideo[filesize<45M]+bestaudio/best[filesize<45M]/best';
 
     const args = [
       url,
-      '-o', path.join(outputDir, '%(id)s.%(ext)s'),
-      '--no-warnings',
-      '--no-playlist',
+      '-o', path.join(dir, '%(id)s.%(ext)s'),
+      '--no-warnings', '--no-playlist',
       '--merge-output-format', 'mp4',
-      '--format', audioOnly
-        ? 'bestaudio/best'
-        : 'bestvideo[filesize<45M]+bestaudio/best[filesize<45M]/best',
+      '-f', fmt,
     ];
 
-    if (fs.existsSync('cookies.txt')) {
-      args.push('--cookies', 'cookies.txt');
-      console.log('🍪 Using cookies.txt');
-    }
+    if (fs.existsSync('cookies.txt')) args.push('--cookies', 'cookies.txt');
+    if (audio) args.push('-x', '--audio-format', 'mp3', '--audio-quality', '192');
 
-    if (audioOnly) {
-      args.push('-x', '--audio-format', 'mp3', '--audio-quality', '192');
-    }
+    console.log(`⬇ ${YT_DLP} ${args.join(' ')}`);
 
-    console.log(`⬇️  Running: ${YT_DLP_BIN} ${args.join(' ')}`);
-
-    execFile(YT_DLP_BIN, args, { timeout: 180000 }, (err, stdout, stderr) => {
-      if (stdout) console.log('yt-dlp stdout:', stdout);
-      if (stderr) console.error('yt-dlp stderr:', stderr);
-      if (err) return reject(new Error(stderr || err.message));
-      resolve();
+    const proc = execFile(YT_DLP, args, { timeout: 180_000 }, (err, out, stderr) => {
+      if (out) console.log(out);
+      if (stderr) console.error(stderr);
+      err ? reject(new Error(stderr || err.message)) : resolve();
     });
+
+    proc.on('error', (e) => reject(new Error(`yt-dlp binary error: ${e.message}`)));
   });
 }
 
-// ═══════════════════════════════════════════
-//  /start
-// ═══════════════════════════════════════════
+/* ──────────────── Shared send-media logic ─────────────────────── */
 
-bot.start((ctx) => {
-  const text =
+async function sendMedia(ctx, statusId, dir, audio = false) {
+  const files = await findFiles(dir);
+  const exts  = audio ? /\.mp3$/i : /\.(mp4|mkv|webm|mov|jpg|jpeg|png|webp)$/i;
+  const media = files.find(f => exts.test(f));
+
+  if (!media) {
+    await editMsg(ctx, statusId, 'Bhai media nahi mili. Link check kar! 😔');
+    return;
+  }
+
+  const { size } = await fs.stat(media);
+  if (size > MAX_SIZE) {
+    await editMsg(ctx, statusId, 'Bhai file 50 MB se badi hai! 😔');
+    return;
+  }
+
+  const ext = path.extname(media).toLowerCase();
+  if (audio || ext === '.mp3')       await ctx.replyWithAudio({ source: media });
+  else if (['.mp4', '.mkv', '.webm', '.mov'].includes(ext)) await ctx.replyWithVideo({ source: media });
+  else                                await ctx.replyWithPhoto({ source: media });
+
+  await ctx.deleteMessage(statusId).catch(() => {});
+}
+
+/* ──────────────── Bot commands ────────────────────────────────── */
+
+bot.start(ctx =>
+  ctx.replyWithMarkdown(
     'Hello bhai! 👋 Main tera all-in-one bot hoon.\n\n' +
-    '📥 *Media Downloader*\n' +
-    'YouTube, Instagram, Twitter ya FB ka link bhej!\n\n' +
-    '🎵 MP3: `/mp3 <link>`\n' +
-    '🌐 Translate: `/translate <text>`\n' +
-    '⏰ Remind: `/remind 10m Chai peeni hai`\n\n' +
-    '🤖 *AI Fun Mode* — niche buttons try kar!';
-
-  return ctx.replyWithMarkdown(
-    text,
+    '📥 *Media Download* — koi bhi link bhej\n' +
+    '🎵 `/mp3 <link>` — audio download\n' +
+    '🌐 `/translate <text>` — Hindi translate\n' +
+    '⏰ `/remind 10m Chai` — reminder\n\n' +
+    '🤖 *AI Fun* — buttons daba!',
     Markup.inlineKeyboard([
-      [Markup.button.callback('😂 Roast', 'mode_roast'), Markup.button.callback('🎤 Shayari', 'mode_shayari')],
-      [Markup.button.callback('🎵 Rap', 'mode_rap'), Markup.button.callback('🔮 Fortune', 'mode_fortune')],
-      [Markup.button.callback('📝 Story', 'mode_story'), Markup.button.callback('🍕 Recipe', 'mode_recipe')],
+      [Markup.button.callback('😂 Roast',   'mode_roast'),   Markup.button.callback('🎤 Shayari', 'mode_shayari')],
+      [Markup.button.callback('🎵 Rap',     'mode_rap'),     Markup.button.callback('🔮 Fortune', 'mode_fortune')],
+      [Markup.button.callback('📝 Story',   'mode_story'),   Markup.button.callback('🍕 Recipe',  'mode_recipe')],
     ]),
-  );
-});
+  ),
+);
 
-// ═══════════════════════════════════════════
-//  /mp3
-// ═══════════════════════════════════════════
-
-bot.command('mp3', async (ctx) => {
+bot.command('mp3', async ctx => {
   const url = ctx.message.text.split(' ')[1];
-  if (!url) return ctx.reply('Bhai link toh bhej! Example: /mp3 <link>');
+  if (!url) return ctx.reply('Example: /mp3 https://youtu.be/...');
 
-  const statusMsg = await ctx.reply('⏳ MP3 download ho raha hai…');
-  const dlDir = path.join('/tmp', `mp3_${ctx.from.id}_${Date.now()}`);
-  await fs.ensureDir(dlDir);
+  const s = await ctx.reply('⏳ MP3 download ho raha hai …');
+  const dir = path.join('/tmp', `mp3_${ctx.from.id}_${Date.now()}`);
+  await fs.ensureDir(dir);
 
   try {
-    await downloadMedia(url, dlDir, true);
-    const allFiles = await walkDir(dlDir);
-    const mp3 = allFiles.find((f) => /\.mp3$/i.test(f));
-
-    if (!mp3) return editStatus(ctx, statusMsg.message_id, 'Bhai MP3 nahi mili. 😔');
-
-    const { size } = await fs.stat(mp3);
-    if (size > MAX_FILE_SIZE) return editStatus(ctx, statusMsg.message_id, 'MP3 50 MB se badi hai! 😔');
-
-    await ctx.replyWithAudio({ source: mp3 });
-    await ctx.deleteMessage(statusMsg.message_id).catch(() => {});
+    await download(url, dir, true);
+    await sendMedia(ctx, s.message_id, dir, true);
   } catch (err) {
-    console.error('MP3 error:', err.message);
-    const msg = isYouTubeBlock(err)
-      ? 'YouTube ne block kar diya! 🛑 cookies.txt upload karo.'
-      : `Download error! 🙏\n\n${err.message.substring(0, 200)}`;
-    await editStatus(ctx, statusMsg.message_id, msg);
-  } finally {
-    await cleanup(dlDir);
-  }
+    console.error('mp3 err:', err.message);
+    await editMsg(ctx, s.message_id,
+      ytBlock(err) ? 'YouTube block! 🛑 cookies.txt upload karo.' : `Error: ${err.message.slice(0, 200)}`);
+  } finally { await cleanup(dir); }
 });
 
-// ═══════════════════════════════════════════
-//  /translate
-// ═══════════════════════════════════════════
-
-bot.command('translate', async (ctx) => {
-  const text =
-    ctx.message.text.split(' ').slice(1).join(' ') ||
-    (ctx.message.reply_to_message?.text ?? '');
-  if (!text) return ctx.reply('Bhai kya translate karun? 🙏');
+bot.command('translate', async ctx => {
+  const txt = ctx.message.text.split(' ').slice(1).join(' ') || ctx.message.reply_to_message?.text || '';
+  if (!txt) return ctx.reply('Kya translate karun? Text likh ya reply kar 🙏');
   try {
-    const res = await translate(text, { to: 'hi' });
-    await ctx.reply(`🌐 *Translated:*\n\n${res.text}`, { parse_mode: 'Markdown' });
-  } catch {
-    await ctx.reply('Translation error bhai! 🙏');
-  }
+    const r = await translate(txt, { to: 'hi' });
+    await ctx.reply(`🌐 *Translated:*\n\n${r.text}`, { parse_mode: 'Markdown' });
+  } catch { await ctx.reply('Translation error! 🙏'); }
 });
 
-// ═══════════════════════════════════════════
-//  /remind
-// ═══════════════════════════════════════════
-
-bot.command('remind', async (ctx) => {
-  const parts = ctx.message.text.split(' ');
-  if (parts.length < 3) return ctx.reply('Format: /remind 10m Chai peeni hai');
-  const timeStr = parts[1];
-  const msg = parts.slice(2).join(' ');
-
-  let ms = parseInt(timeStr) * 1000;
-  if (timeStr.endsWith('m')) ms = parseInt(timeStr) * 60000;
-  else if (timeStr.endsWith('h')) ms = parseInt(timeStr) * 3600000;
-
-  if (isNaN(ms) || ms <= 0) return ctx.reply('Time sahi se batao (30s, 10m, 2h) 🙏');
-
-  schedule.scheduleJob(new Date(Date.now() + ms), () => {
-    ctx.reply(`⏰ Yaad dilaya bhai: ${msg}`);
-  });
-  await ctx.reply(`Done! ${timeStr} baad yaad dila dunga. 👍`);
+bot.command('remind', async ctx => {
+  const p = ctx.message.text.split(' ');
+  if (p.length < 3) return ctx.reply('/remind 10m Chai peeni hai');
+  const t = p[1], msg = p.slice(2).join(' ');
+  let ms = parseInt(t) * 1000;
+  if (t.endsWith('m')) ms = parseInt(t) * 60_000;
+  if (t.endsWith('h')) ms = parseInt(t) * 3_600_000;
+  if (!ms || ms <= 0) return ctx.reply('Time galat hai 🙏');
+  schedule.scheduleJob(new Date(Date.now() + ms), () => ctx.reply(`⏰ Reminder: ${msg}`));
+  await ctx.reply(`👍 ${t} baad yaad dila dunga!`);
 });
 
-// ═══════════════════════════════════════════
-//  AI MODE BUTTONS
-// ═══════════════════════════════════════════
+/* ──────────────── AI Mode (buttons + text) ────────────────────── */
 
-const AI_PROMPTS = {
-  roast: { ask: 'Naam bata jisko roast karna hai! 🔥', sys: 'You are a savage Indian roaster. 4-line roast in Hinglish.' },
-  shayari: { ask: 'Kis topic pe shayari? 📝', sys: 'Write 4-line deep shayari Mirza Ghalib style. Hinglish.' },
-  rap: { ask: 'Rap ka topic bata! 🎤🔥', sys: 'Write 8-line desi underground rap. Hinglish.' },
-  fortune: { ask: 'Apna naam bata! 🔮', sys: 'Funny Indian jyotishi. 3-4 lines Hinglish.' },
-  story: { ask: 'Story ka topic? 📝', sys: 'Creative 10-line story. Hinglish.' },
-  recipe: { ask: 'Dish ya ingredients batao! 🍕', sys: 'Recipe in Hinglish like desi chef.' },
+const AI = {
+  roast:   { q: 'Naam bata roast ke liye! 🔥',   s: 'Savage Indian roaster. 4-line Hinglish roast.' },
+  shayari: { q: 'Topic bata shayari ke liye! 📝', s: 'Deep 4-line shayari, Ghalib style, Hinglish.' },
+  rap:     { q: 'Rap ka topic bata! 🎤',          s: '8-line desi underground rap. Hinglish.' },
+  fortune: { q: 'Apna naam bata! 🔮',             s: 'Funny Indian jyotishi, 3-4 line. Hinglish.' },
+  story:   { q: 'Story topic bata! 📝',           s: '10-line creative story. Hinglish.' },
+  recipe:  { q: 'Dish / ingredients batao! 🍕',   s: 'Desi chef recipe. Hinglish.' },
 };
 
-bot.on('callback_query', async (ctx) => {
-  const mode = ctx.callbackQuery.data?.replace('mode_', '');
-  if (!AI_PROMPTS[mode]) return;
+bot.on('callback_query', async ctx => {
+  const m = ctx.callbackQuery.data?.replace('mode_', '');
+  if (!AI[m]) return;
   ctx.session ??= {};
-  ctx.session.mode = mode;
+  ctx.session.mode = m;
   await ctx.answerCbQuery();
-  await ctx.editMessageText(AI_PROMPTS[mode].ask);
+  await ctx.editMessageText(AI[m].q);
 });
 
-// ═══════════════════════════════════════════
-//  TEXT – AI reply OR media download
-// ═══════════════════════════════════════════
-
-bot.on('text', async (ctx) => {
-  const userText = ctx.message.text;
+bot.on('text', async ctx => {
+  const txt  = ctx.message.text;
   const mode = ctx.session?.mode;
 
-  // --- AI Mode ---
-  if (mode && AI_PROMPTS[mode]) {
-    const status = await ctx.reply('Typing… 🤖');
-    const resp = await askAi(`${mode}: ${userText}`, AI_PROMPTS[mode].sys);
-    await editStatus(ctx, status.message_id, resp);
+  // AI mode active
+  if (mode && AI[mode]) {
+    const s = await ctx.reply('Typing … 🤖');
+    try {
+      const r = await askAi(txt, AI[mode].s);
+      await editMsg(ctx, s.message_id, r);
+    } catch (e) {
+      await editMsg(ctx, s.message_id, 'AI error! 🙏');
+    }
     ctx.session.mode = null;
     return;
   }
 
-  // --- Download links ---
-  const urlMatch = userText.match(/https?:\/\/[^\s]+/);
-  if (!urlMatch) return ctx.reply('Bhai link bhej ya /start se maze le! 🙏');
+  // Link detected — download
+  const m = txt.match(/https?:\/\/[^\s]+/);
+  if (!m) return ctx.reply('Link bhej ya /start se shuru kar! 🙏');
 
-  const url = urlMatch[0];
-  const statusMsg = await ctx.reply('⏳ Download ho raha hai… ruk bhai!');
-  const dlDir = path.join('/tmp', `dl_${ctx.from.id}_${Date.now()}`);
-  await fs.ensureDir(dlDir);
+  const s   = await ctx.reply('⏳ Download ho raha hai …');
+  const dir = path.join('/tmp', `dl_${ctx.from.id}_${Date.now()}`);
+  await fs.ensureDir(dir);
 
   try {
-    await downloadMedia(url, dlDir);
-    const allFiles = await walkDir(dlDir);
-    const media = allFiles.find((f) => /\.(mp4|mkv|webm|jpg|jpeg|png|webp)$/i.test(f));
-
-    if (!media) return editStatus(ctx, statusMsg.message_id, 'Bhai media nahi mili. Link check kar! 😔');
-
-    const { size } = await fs.stat(media);
-    if (size > MAX_FILE_SIZE) return editStatus(ctx, statusMsg.message_id, 'File 50 MB se badi hai! 😔');
-
-    const ext = path.extname(media).toLowerCase();
-    if (['.mp4', '.mkv', '.webm'].includes(ext)) {
-      await ctx.replyWithVideo({ source: media });
-    } else {
-      await ctx.replyWithPhoto({ source: media });
-    }
-    await ctx.deleteMessage(statusMsg.message_id).catch(() => {});
+    await download(m[0], dir);
+    await sendMedia(ctx, s.message_id, dir);
   } catch (err) {
-    console.error('Download error:', err.message);
-    const msg = isYouTubeBlock(err)
-      ? 'YouTube ne block kar diya! 🛑 cookies.txt upload karo.'
-      : `Download fail! 🙏\n\n${err.message.substring(0, 200)}`;
-    await editStatus(ctx, statusMsg.message_id, msg);
-  } finally {
-    await cleanup(dlDir);
-  }
+    console.error('dl err:', err.message);
+    await editMsg(ctx, s.message_id,
+      ytBlock(err) ? 'YouTube block! 🛑 cookies.txt upload karo.' : `Error: ${err.message.slice(0, 200)}`);
+  } finally { await cleanup(dir); }
 });
 
-// ═══════════════════════════════════════════
-//  LAUNCH
-// ═══════════════════════════════════════════
+/* ──────────────── Boot sequence ───────────────────────────────── */
 
-console.log('🚀 Starting Everything Downloader Bot...');
+(async () => {
+  try {
+    await installYtDlp();
+  } catch (e) {
+    console.error('⚠️ yt-dlp install failed:', e.message);
+  }
 
-// Step 1: Install yt-dlp standalone binary
-const ytdlpReady = installYtDlp();
-if (!ytdlpReady) {
-  console.error('⚠️  yt-dlp not available. Downloads will fail.');
-}
-
-// Step 2: Launch bot
-bot
-  .launch({ dropPendingUpdates: true })
-  .then(() => console.log('✅ Bot is alive and ready!'))
-  .catch((err) => {
-    console.error('❌ Bot failed:', err.message);
+  try {
+    await bot.launch({ dropPendingUpdates: true });
+    console.log('✅ Bot is alive!');
+  } catch (e) {
+    console.error('❌ Bot launch failed:', e.message);
     process.exit(1);
-  });
+  }
+})();
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGINT',  () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
