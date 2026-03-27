@@ -1,5 +1,4 @@
 const { Telegraf, Markup } = require('telegraf');
-const ytDlp = require('yt-dlp-exec');
 const Groq = require('groq-sdk');
 const { translate } = require('google-translate-api-x');
 const schedule = require('node-schedule');
