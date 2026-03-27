@@ -155,12 +155,26 @@ def _download_instagram_post(shortcode: str, download_dir: str) -> bool:
         download_videos=True,
         download_video_thumbnails=False,
         save_metadata=False,
-        dirname_pattern=download_dir
+        dirname_pattern=download_dir,
+        # Add rate limiting
+        request_timeout=30,
+        max_connection_attempts=1,
+        # Don't use session to avoid auth requirements
     )
     try:
+        # Add small delay to avoid rate limiting
+        import time
+        time.sleep(2)
+
         post = instaloader.Post.from_shortcode(L.context, shortcode)
         L.download_post(post, target=download_dir)
         return True
+    except instaloader.PrivateProfileException:
+        print(f"Instagram error: Private profile or post")
+        return False
+    except instaloader.QueryReturnedBadStatusCodeException as e:
+        print(f"Instagram 403/rate limit error: {e}")
+        return False
     except Exception as e:
         print(f"Instaloader error: {e}")
         return False
@@ -304,7 +318,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
                     await status_msg.delete()
             else:
-                await status_msg.edit_text("❌ Instagram video download nahi hua. Private ho sakta hai ya link valid nahi hai.")
+                await status_msg.edit_text(
+                    "❌ Instagram se download nahi hua bhai!\n\n"
+                    "Possible reasons:\n"
+                    "• Private post hai\n"
+                    "• Instagram ne block kar diya (rate limit)\n"
+                    "• Invalid link\n\n"
+                    "Kuch minutes baad try karo ya dusra link bhejo."
+                )
 
         else:
             # Download YouTube/Twitter/Facebook
