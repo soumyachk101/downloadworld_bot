@@ -312,7 +312,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     # URL detected - start download
+    print(f"Received URL from user {user_id}: {text}")
     platform = detect_platform(text)
+    print(f"Detected platform: {platform}")
     if not platform:
         await message.reply_text(
             "❌ Ye platform supported nahi hai bhai!\n\n"
@@ -329,7 +331,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         if platform == "instagram":
             # Download Instagram
+            print(f"Starting Instagram download for {text}")
             video_path = await download_instagram(text, download_dir, user_id, message_id)
+
+            print(f"Instagram download result: video_path={video_path}, exists={os.path.exists(video_path) if video_path else 'N/A'}")
 
             if video_path and os.path.exists(video_path):
                 file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
@@ -357,7 +362,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         else:
             # Download YouTube/Twitter/Facebook
+            print(f"Starting download for {platform}: {text}")
             video_path, thumb_path = await download_video(text, download_dir, user_id, message_id)
+
+            print(f"Download result: video_path={video_path}, exists={os.path.exists(video_path) if video_path else 'N/A'}")
 
             if video_path and os.path.exists(video_path):
                 file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
