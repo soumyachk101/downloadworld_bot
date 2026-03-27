@@ -38,7 +38,7 @@ const BOT_TOKEN    = process.env.BOT_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const MAX_SIZE     = 50 * 1024 * 1024;          // Telegram 50 MB limit
 const YT_DLP       = '/tmp/yt-dlp';             // standalone binary path
-const YT_DLP_URL   = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+const YT_DLP_URL   = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
 
 if (!BOT_TOKEN) { console.error('❌ BOT_TOKEN missing'); process.exit(1); }
 
@@ -282,12 +282,21 @@ bot.on('text', async ctx => {
     console.error('⚠️ yt-dlp install failed:', e.message);
   }
 
-  try {
-    await bot.launch({ dropPendingUpdates: true });
-    console.log('✅ Bot is alive!');
-  } catch (e) {
-    console.error('❌ Bot launch failed:', e.message);
-    process.exit(1);
+  // Retry logic for 409 Conflict (old instance still polling)
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await bot.launch({ dropPendingUpdates: true });
+      console.log('✅ Bot is alive!');
+      break;
+    } catch (e) {
+      if (e.message.includes('409') && attempt < 5) {
+        console.log(`⏳ Attempt ${attempt}/5 — old instance still running, waiting 5s…`);
+        await new Promise(r => setTimeout(r, 5000));
+      } else {
+        console.error('❌ Bot launch failed:', e.message);
+        process.exit(1);
+      }
+    }
   }
 })();
 
