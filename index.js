@@ -149,7 +149,7 @@ bot.command('mp3', async (ctx) => {
     console.error('MP3 error:', err.message);
     const msg = isYouTubeBlock(err)
       ? 'YouTube ne block kar diya hai! 🛑 cookies.txt upload karo.'
-      : 'MP3 download error! 🙏';
+      : `MP3 download error! 🙏\n\nError: ${err.message.substring(0, 200)}`;
     await editStatus(ctx, statusMsg.message_id, msg);
   } finally {
     await cleanup(dlDir);
@@ -273,7 +273,7 @@ bot.on('text', async (ctx) => {
     console.error('Download error:', err.message);
     const msg = isYouTubeBlock(err)
       ? 'YouTube ne block kar diya hai! 🛑 cookies.txt upload karo.'
-      : 'Bhai download fail ho gaya! 🙏';
+      : `Bhai download fail ho gaya! 🙏\n\nError: ${err.message.substring(0, 200)}`;
     await editStatus(ctx, statusMsg.message_id, msg);
   } finally {
     await cleanup(dlDir);
