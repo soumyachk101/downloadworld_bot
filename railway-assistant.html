@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Railway Deployment Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+
+        .status-badge {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            backdrop-filter: blur(10px);
+        }
+
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 16px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab:hover {
+            background: #e9ecef;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            background: white;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .card h3 {
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 5px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);
+        }
+
+        .url-input-group {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .url-input-group input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .url-input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .check-item {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .check-item.success {
+            border-color: #38ef7d;
+            background: #f0fff4;
+        }
+
+        .check-item.error {
+            border-color: #f5576c;
+            background: #fff5f5;
+        }
+
+        .check-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .check-status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .check-status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .check-status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .config-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .config-item label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .config-item .value {
+            color: #667eea;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+
+        .terminal {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+
+        .terminal .line {
+            margin-bottom: 3px;
+        }
+
+        .terminal .line.success { color: #00ff00; }
+        .terminal .line.error { color: #ff4444; }
+        .terminal .line.info { color: #4fc3f7; }
+        .terminal .line.warning { color: #ffb74d; }
+
+        .step-list {
+            list-style: none;
+            counter-reset: step;
+        }
+
+        .step-list li {
+            counter-increment: step;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            position: relative;
+            padding-left: 60px;
+        }
+
+        .step-list li::before {
+            content: counter(step);
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 30px;
+            height: 30px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .step-list li.completed {
+            border-color: #38ef7d;
+            background: #f0fff4;
+        }
+
+        .floating-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            font-size: 24px;
+            z-index: 1000;
+            transition: transform 0.3s;
+        }
+
+        .floating-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(102, 126, 234, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0); }
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            display: none;
+            z-index: 1001;
+            max-width: 350px;
+            border-left: 4px solid #667eea;
+        }
+
+        .notification.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .hidden { display: none; }
+
+        @media (max-width: 768px) {
+            .container { border-radius: 10px; }
+            .header h1 { font-size: 24px; }
+            .tabs { flex-direction: column; }
+            .url-input-group { flex-direction: column; }
+            .btn { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="status-badge" id="railwayStatus">🔴 Not Connected</div>
+            <h1>🚀 Railway Deployment Assistant</h1>
+            <p>Deploy and verify your Telegram bot in one place</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('deploy')">🚀 Deploy</button>
+            <button class="tab" onclick="switchTab('check')">🔍 Verify</button>
+            <button class="tab" onclick="switchTab('config')">⚙️ Config</button>
+            <button class="tab" onclick="switchTab('help')">📚 Help</button>
+        </div>
+
+        <div class="content">
+            <!-- Deploy Tab -->
+            <div id="deploy" class="tab-content active">
+                <div class="card">
+                    <h3>📦 Quick Deploy</h3>
+                    <p style="margin-bottom: 15px; color: #666;">
+                        Deploy your bot to Railway in just a few clicks. Make sure you have:
+                    </p>
+                    <ul style="margin-left: 20px; line-height: 1.8;">
+                        <li>Telegram Bot Token from <a href="https://t.me/botfather" target="_blank">@BotFather</a></li>
+                        <li>GitHub repository connected</li>
+                        <li>Railway account ready</li>
+                    </ul>
+                    <div style="margin-top: 20px;">
+                        <button class="btn" onclick="openRailway()">
+                            🌐 Open Railway Dashboard
+                        </button>
+                        <button class="btn btn-secondary" onclick="openGitHub()">
+                            📁 View Code on GitHub
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>⚡ One-Click Deploy</h3>
+                    <p style="margin: 10px 0; color: #666;">
+                        Click the button below to automatically create a Railway project from this repository:
+                    </p>
+                    <button class="btn btn-success pulse" onclick="oneClickDeploy()">
+                        ✨ Deploy to Railway Now
+                    </button>
+                    <p style="margin-top: 10px; font-size: 12px; color: #999;">
+                        This will redirect you to Railway to authorize and create project
+                    </p>
+                </div>
+
+                <div class="card">
+                    <h3>📋 Pre-Deployment Checklist</h3>
+                    <ul class="step-list" id="checklist">
+                        <li>BOT_TOKEN obtained from @BotFather</li>
+                        <li>Code pushed to GitHub (done ✅)</li>
+                        <li>COOKIES_B64 set (optional, for Instagram)</li>
+                        <li>GROQ_API_KEY set (optional, for AI features)</li>
+                        <li>ADMIN_ID set (optional, for admin commands)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Verify Tab -->
+            <div id="check" class="tab-content">
+                <div class="card">
+                    <h3>🔍 Deployment Verification</h3>
+                    <p style="margin-bottom: 15px; color: #666;">
+                        Enter your Railway app URL to verify the deployment:
+                    </p>
+                    <div class="url-input-group">
+                        <input type="text" id="railwayUrl" placeholder="https://your-app.up.railway.app" value="">
+                        <button class="btn" onclick="runChecks()">🔍 Run Checks</button>
+                    </div>
+                    <p style="font-size: 12px; color: #999;">
+                        Find your app URL in Railway dashboard (e.g., https://everything-downloader.up.railway.app)
+                    </p>
+                </div>
+
+                <div id="checksContainer" class="hidden">
+                    <div class="check-item" id="check-url">
+                        <div>
+                            <div class="check-name">URL Format</div>
+                            <div class="check-detail">Validating URL structure</div>
+                        </div>
+                        <div class="check-status">⏳ Pending</div>
+                    </div>
+                    <div class="check-item" id="check-reachability">
+                        <div>
+                            <div class="check-name">Reachability</div>
+                            <div class="check-detail">Checking if Railway app responds</div>
+                        </div>
+                        <div class="check-status">⏳ Pending</div>
+                    </div>
+                    <div class="check-item" id="check-health">
+                        <div>
+                            <div class="check-name">Health Endpoint</div>
+                            <div class="check-detail">GET /health</div>
+                        </div>
+                        <div class="check-status">⏳ Pending</div>
+                    </div>
+                    <div class="check-item" id="check-metrics">
+                        <div>
+                            <div class="check-name">Metrics Endpoint</div>
+                            <div class="check-detail">GET /metrics</div>
+                        </div>
+                        <div class="check-status">⏳ Pending</div>
+                    </div>
+                    <div class="check-item" id="check-status">
+                        <div>
+                            <div class="check-name">Bot Status</div>
+                            <div class="check-detail">Checking yt-dlp version</div>
+                        </div>
+                        <div class="check-status">⏳ Pending</div>
+                    </div>
+                </div>
+
+                <div class="terminal hidden" id="terminal"></div>
+
+                <div class="card hidden" id="summaryCard">
+                    <h3>📊 Summary</h3>
+                    <div id="summaryContent"></div>
+                </div>
+            </div>
+
+            <!-- Config Tab -->
+            <div id="config" class="tab-content">
+                <div class="card">
+                    <h3>⚙️ Environment Variables</h3>
+                    <p style="margin-bottom: 15px; color: #666;">
+                        Configure these variables in Railway Dashboard → Variables:
+                    </p>
+                    <div class="config-grid">
+                        <div class="config-item">
+                            <label>BOT_TOKEN (Required)</label>
+                            <div class="value">123456:ABC...</div>
+                            <small style="color: #999;">Get from @BotFather</small>
+                        </div>
+                        <div class="config-item">
+                            <label>GROQ_API_KEY (Optional)</label>
+                            <div class="value">gsk_...</div>
+                            <small style="color: #999;">For AI features</small>
+                        </div>
+                        <div class="config-item">
+                            <label>COOKIES_B64 (Optional)</label>
+                            <div class="value">base64 string...</div>
+                            <small style="color: #999;">For Instagram access</small>
+                        </div>
+                        <div class="config-item">
+                            <label>ADMIN_ID (Optional)</label>
+                            <div class="value">123456789</div>
+                            <small style="color: #999;">Your Telegram user ID</small>
+                        </div>
+                        <div class="config-item">
+                            <label>RATE_LIMIT (Optional)</label>
+                            <div class="value">5</div>
+                            <small style="color: #999;">Downloads per minute</small>
+                        </div>
+                    </div>
+                    <button class="btn" style="margin-top: 20px;" onclick="copyConfig()">
+                        📋 Copy Config Setup
+                    </button>
+                </div>
+
+                <div class="card">
+                    <h3>🔐 Security Best Practices</h3>
+                    <ul style="margin-left: 20px; line-height: 1.8;">
+                        <li>Never commit .env file to GitHub</li>
+                        <li>Use strong random BOT_TOKEN</li>
+                        <li>Rotate COOKIES_B64 every 2 weeks</li>
+                        <li>Set ADMIN_ID to restrict admin commands</li>
+                        <li>Enable 2FA on Telegram and GitHub</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Help Tab -->
+            <div id="help" class="tab-content">
+                <div class="card">
+                    <h3>📚 Documentation</h3>
+                    <ul style="margin-left: 20px; line-height: 2;">
+                        <li><a href="DEPLOYMENT.md" target="_blank">📄 DEPLOYMENT.md</a> - Complete deployment guide</li>
+                        <li><a href="README-COOKIES.md" target="_blank">📦 README-COOKIES.md</a> - Cookie setup for Instagram</li>
+                        <li><a href="deployment-checker.html" target="_blank">🔍 deployment-checker.html</a> - Standalone checker</li>
+                    </ul>
+                </div>
+
+                <div class="card">
+                    <h3>🐛 Common Issues</h3>
+                    <details style="margin-bottom: 10px;">
+                        <summary style="cursor: pointer; padding: 10px; background: #f8f9fa; border-radius: 5px; margin-bottom: 5px;">
+                            <strong>Instagram rate limit / login required</strong>
+                        </summary>
+                        <div style="padding: 15px; background: white; border-radius: 5px; margin-top: 5px;">
+                            <p>Set <code>COOKIES_B64</code> environment variable with your cookies.</p>
+                            <p>See README-COOKIES.md for step-by-step instructions.</p>
+                        </div>
+                    </details>
+                    <details style="margin-bottom: 10px;">
+                        <summary style="cursor: pointer; padding: 10px; background: #f8f9fa; border-radius: 5px; margin-bottom: 5px;">
+                            <strong>Bot not responding</strong>
+                        </summary>
+                        <div style="padding: 15px; background: white; border-radius: 5px; margin-top: 5px;">
+                            <p>Check: BOT_TOKEN is set correctly (format: <code>123456:ABC...</code>)</p>
+                            <p>Check logs: <code>railway logs</code></p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary style="cursor: pointer; padding: 10px; background: #f8f9fa; border-radius: 5px; margin-bottom: 5px;">
+                            <strong>Health check failing</strong>
+                        </summary>
+                        <div style="padding: 15px; background: white; border-radius: 5px; margin-top: 5px;">
+                            <p>Ensure PORT is set to 3000 (Railway sets this automatically).</p>
+                            <p>Check logs for port binding errors.</p>
+                        </div>
+                    </details>
+                </div>
+
+                <div class="card">
+                    <h3>💡 Quick Commands</h3>
+                    <div class="terminal" style="max-height: auto;">
+                        <div class="line"># Check logs</div>
+                        <div class="line">railway logs</div>
+                        <div class="line info"># Follow logs in real-time</div>
+                        <div class="line">railway logs --follow</div>
+                        <div class="line"># Redeploy</div>
+                        <div class="line">railway up</div>
+                        <div class="line"># Check environment variables</div>
+                        <div class="line">railway variables</div>
+                        <div class="line"># Open Railway dashboard</div>
+                        <div class="line">railway open</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button class="floating-btn pulse" onclick="quickCheck()" title="Quick Deploy Check">
+        🔍
+    </button>
+
+    <div class="notification" id="notification">
+        <div id="notificationText"></div>
+    </div>
+
+    <script>
+        const RAILWAY_DEFAULT_URL = '';
+
+        // Auto-fill from hash
+        window.onload = function() {
+            const hash = window.location.hash;
+            if (hash && hash.startsWith('#url=')) {
+                const url = decodeURIComponent(hash.substring(5));
+                document.getElementById('railwayUrl').value = url;
+            }
+
+            // Check if Railway CLI is available
+            detectRailway();
+        };
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`button[onclick="switchTab('${tabId}')"]`).classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        function showNotification(message, type = 'info') {
+            const notif = document.getElementById('notification');
+            const text = document.getElementById('notificationText');
+            text.textContent = message;
+            notif.style.borderLeftColor = type === 'success' ? '#38ef7d' : type === 'error' ? '#f5576c' : '#667eea';
+            notif.classList.add('show');
+            setTimeout(() => notif.classList.remove('show'), 3000);
+        }
+
+        function openRailway() {
+            window.open('https://railway.app/dashboard', '_blank');
+            log('Opening Railway dashboard...', 'info');
+        }
+
+        function openGitHub() {
+            window.open('https://github.com/soumyachk101/Everything_Downloader_bot', '_blank');
+        }
+
+        function oneClickDeploy() {
+            const repo = 'soumyachk101/Everything_Downloader_bot';
+            const url = `https://railway.app/new?repo=${repo}`;
+            window.open(url, '_blank');
+            log('Redirecting to Railway deployment...', 'info');
+            showNotification('Opening Railway deployment page...', 'info');
+        }
+
+        function detectRailway() {
+            // Check if we can access Railway (CORS restrictions apply)
+            fetch('https://railway.app', { mode: 'no-cors' })
+                .then(() => {
+                    document.getElementById('railwayStatus').innerHTML = '🟢 Railway Accessible';
+                    document.getElementById('railwayStatus').style.background = 'rgba(56, 239, 125, 0.2)';
+                })
+                .catch(() => {
+                    document.getElementById('railwayStatus').innerHTML = '🔴 Check Manually';
+                });
+        }
+
+        function log(message, type = 'info') {
+            const terminal = document.getElementById('terminal');
+            terminal.classList.remove('hidden');
+            const time = new Date().toLocaleTimeString();
+            terminal.innerHTML += `<div class="line ${type}">[${time}] ${message}</div>`;
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function updateCheckStatus(id, status, detail = '') {
+            const check = document.getElementById(`check-${id}`);
+            if (!check) return;
+
+            const statusEl = check.querySelector('.check-status');
+            const detailEl = check.querySelector('.check-detail');
+
+            check.className = `check-item ${status}`;
+            statusEl.className = `check-status ${status}`;
+            statusEl.textContent = status === 'success' ? '✅ Passed' : status === 'error' ? '❌ Failed' : '⏳ Running';
+            if (detail) detailEl.textContent = detail;
+        }
+
+        async function runChecks() {
+            const url = document.getElementById('railwayUrl').value.trim();
+            if (!url) {
+                alert('Please enter Railway URL');
+                return;
+            }
+
+            let baseUrl = url;
+            if (!url.startsWith('http')) baseUrl = 'https://' + url;
+            if (!baseUrl.endsWith('/')) baseUrl += '/';
+
+            document.getElementById('checksContainer').classList.remove('hidden');
+            document.getElementById('terminal').classList.remove('hidden');
+            document.getElementById('summaryCard').classList.add('hidden');
+            document.getElementById('terminal').innerHTML = '';
+
+            log(`🚀 Starting checks for: ${baseUrl}`, 'info');
+
+            let passed = 0, failed = 0;
+
+            // 1. URL
+            updateCheckStatus('url', 'running');
+            try {
+                new URL(baseUrl);
+                log('✅ URL format valid', 'success');
+                updateCheckStatus('url', 'success', baseUrl);
+                passed++;
+            } catch (e) {
+                log('❌ Invalid URL', 'error');
+                updateCheckStatus('url', 'error', 'Invalid URL');
+                return;
+            }
+
+            // 2. Reachability
+            updateCheckStatus('reachability', 'running');
+            try {
+                const controller = new AbortController();
+                setTimeout(() => controller.abort(), 10000);
+                const response = await fetch(baseUrl, { signal: controller.signal });
+                if (response.ok || response.status === 404) {
+                    log(`✅ App reachable (HTTP ${response.status})`, 'success');
+                    updateCheckStatus('reachability', 'success', `HTTP ${response.status}`);
+                    passed++;
+                } else throw new Error(`HTTP ${response.status}`);
+            } catch (e) {
+                log(`❌ Not reachable: ${e.message}`, 'error');
+                updateCheckStatus('reachability', 'error', e.message);
+                failed++;
+                return;
+            }
+
+            // 3. Health
+            updateCheckStatus('health', 'running');
+            try {
+                const res = await fetch(baseUrl + 'health');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.status === 'ok') {
+                        log(`✅ Health OK (v${data.version}, uptime: ${Math.floor(data.uptime/60)}m)`, 'success');
+                        updateCheckStatus('health', 'success', `v${data.version}`);
+                        passed++;
+                    } else throw new Error('Invalid health data');
+                } else throw new Error(`HTTP ${res.status}`);
+            } catch (e) {
+                log(`❌ Health failed: ${e.message}`, 'error');
+                updateCheckStatus('health', 'error', e.message);
+                failed++;
+            }
+
+            // 4. Metrics
+            updateCheckStatus('metrics', 'running');
+            try {
+                const res = await fetch(baseUrl + 'metrics');
+                if (res.ok) {
+                    const text = await res.text();
+                    if (text.includes('bot_uptime_seconds')) {
+                        log('✅ Metrics available', 'success');
+                        updateCheckStatus('metrics', 'success', 'Prometheus format');
+                        passed++;
+                    } else throw new Error('Invalid format');
+                } else throw new Error(`HTTP ${res.status}`);
+            } catch (e) {
+                log(`⚠️ Metrics failed: ${e.message}`, 'warning');
+                updateCheckStatus('metrics', 'error', 'Not critical');
+            }
+
+            // 5. Status
+            updateCheckStatus('status', 'running');
+            try {
+                const res = await fetch(baseUrl + 'health');
+                const data = await res.json();
+                if (data.version) {
+                    log(`✅ Bot v${data.version} running`, 'success');
+                    updateCheckStatus('status', 'success', `v${data.version}`);
+                    passed++;
+                } else throw new Error('No version');
+            } catch (e) {
+                log(`❌ Status check failed: ${e.message}`, 'error');
+                updateCheckStatus('status', 'error', e.message);
+                failed++;
+            }
+
+            // Summary
+            const total = passed + failed;
+            const percent = Math.round((passed / total) * 100);
+            document.getElementById('summaryContent').innerHTML = `
+                <div class="summary-item">
+                    <span>Total Checks:</span>
+                    <span><strong>${total}</strong></span>
+                </div>
+                <div class="summary-item">
+                    <span>✅ Passed:</span>
+                    <span><strong style="color: #38ef7d;">${passed}</strong></span>
+                </div>
+                <div class="summary-item">
+                    <span>❌ Failed:</span>
+                    <span><strong style="color: #f5576c;">${failed}</strong></span>
+                </div>
+                <div class="summary-item" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #dee2e6;">
+                    <span style="font-size: 18px;">Success Rate:</span>
+                    <span style="font-size: 24px; font-weight: bold; color: ${percent === 100 ? '#38ef7d' : '#ffc107'}">
+                        ${percent}%
+                    </span>
+                </div>
+                <p style="margin-top: 15px; text-align: center; font-weight: 600; color: ${percent === 100 ? '#38ef7d' : '#f5576c'}; font-size: 18px;">
+                    ${percent === 100 ? '🎉 All checks passed! Ready to use.' : '⚠️ Some checks failed. Review errors.'}
+                </p>
+            `;
+            document.getElementById('summaryCard').classList.remove('hidden');
+
+            log(`\n📊 Result: ${passed}/${total} passed (${percent}%)`, percent === 100 ? 'success' : 'warning');
+        }
+
+        function quickCheck() {
+            switchTab('check');
+            // Try to extract Railway URL from current tabs/history
+            // For security reasons, we can't access other tabs
+            // So just focus on URL input
+            document.getElementById('railwayUrl').focus();
+            showNotification('Enter your Railway URL and click Run Checks', 'info');
+        }
+
+        function copyConfig() {
+            const config = `# Required
+BOT_TOKEN=your_telegram_bot_token
+
+# Optional
+GROQ_API_KEY=your_groq_key
+COOKIES_B64=base64_encoded_cookies
+ADMIN_ID=your_telegram_id
+RATE_LIMIT=5
+
+# Auto-set by Railway
+PORT=3000
+NODE_ENV=production`;
+
+            navigator.clipboard.writeText(config).then(() => {
+                showNotification('Configuration copied to clipboard!', 'success');
+            }).catch(() => {
+                showNotification('Failed to copy. Please select and copy manually.', 'error');
+            });
+        }
+    </script>
+</body>
+</html>
