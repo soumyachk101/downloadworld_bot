@@ -21,6 +21,7 @@ import instaloader
 from groq import AsyncGroq
 from deep_translator import GoogleTranslator
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from telegram.error import Conflict
 from datetime import timedelta
 
 load_dotenv()
@@ -43,6 +44,14 @@ L = instaloader.Instaloader(
 )
 
 scheduler = AsyncIOScheduler()
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    error = context.error
+    if isinstance(error, Conflict):
+        print("⚠️ Conflict: Dusra instance chal raha hai. 10 sec mein retry...")
+        await asyncio.sleep(10)
+    else:
+        print(f"❌ Error: {error}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
@@ -350,6 +359,9 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
+    # ✅ Error handler add karo
+    app.add_error_handler(error_handler)
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("mp3", mp3_command))
     app.add_handler(CommandHandler("translate", translate_command))
@@ -359,7 +371,8 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot is starting up... waiting for messages.")
-    app.run_polling(drop_pending_updates=True)
+    # ✅ drop_pending_updates=True — purane stuck updates ignore karega
+    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
