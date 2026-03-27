@@ -3,6 +3,7 @@ import re
 import glob
 import asyncio
 import shutil
+import subprocess
 from dotenv import load_dotenv
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -186,20 +187,29 @@ async def translate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def download_video(url: str, output_path: str, audio_only: bool = False):
     ydl_opts = {
         # ✅ FIX 5: Use max_filesize option instead of unreliable format filter
-        'format': 'bestaudio/best' if audio_only else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' if not audio_only else 'bestaudio/best',
         'outtmpl': f'{output_path}/%(id)s.%(ext)s',
-        'quiet': True,
-        'no_warnings': True,
+        'quiet': False,
+        'no_warnings': False,
+        'verbose': True,
+        'max_filesize': 0, # Placeholder to fix linting type inference
     }
+    
+    # Check for cookies.txt
+    if os.path.exists("cookies.txt"):
+        ydl_opts['cookiefile'] = "cookies.txt"
+        print("Using cookies.txt for yt-dlp")
+
     if not audio_only:
         ydl_opts['max_filesize'] = 50 * 1024 * 1024  # Hard 50MB cap
+
     if audio_only:
         ydl_opts['postprocessors'] = [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }]
-
+        
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info_dict = ydl.extract_info(url, download=True)
         return ydl.prepare_filename(info_dict)
@@ -310,7 +320,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         await status_msg.edit_text("Bhai video 50MB se badi hai, main sirf 50MB tak ka bhej sakta hoon! 😔")
                 except Exception as e:
-                    print(f"ytdlp error: {e}")
+                    print(f"ytdlp FULL error: {type(e).__name__}: {e}")
                     await status_msg.edit_text("Bhai video download nahi hui. Private ho sakti hai! 😔")
             else:
                 await status_msg.edit_text("Bhai is platform ka link abhi support nahi karta main. Sirf YT, Insta, Twitter aur FB bhej! 🙏")
@@ -328,6 +338,10 @@ async def post_init(application: Application):
     print("Scheduler started!")
 
 def main():
+    # Auto-update yt-dlp on every startup for Railway
+    print("Updating yt-dlp...")
+    subprocess.run(["pip", "install", "--upgrade", "yt-dlp", "-q"], check=False)
+
     if not BOT_TOKEN:
         print("Error: BOT_TOKEN is missing!")
         return
