@@ -46,7 +46,6 @@ L = instaloader.Instaloader(
 
 # Initialize Scheduler
 scheduler = AsyncIOScheduler()
-scheduler.start()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
@@ -354,6 +353,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Help message for unknown text / no active mode
         await update.message.reply_text("Bhai samajh nahi aaya! Koi link bhej video download ke liye ya /start likh maze karne ke liye! 🙏")
 
+async def post_init(application: Application):
+    if not scheduler.running:
+        scheduler.start()
+    print("Scheduler started!")
+
 def main():
     if not BOT_TOKEN:
         print("Error: BOT_TOKEN is missing! Please add it to your Environment Variables.")
@@ -362,7 +366,7 @@ def main():
     if not GROQ_API_KEY:
         print("Warning: GROQ_API_KEY is missing. AI features are disabled but bot will start.")
         
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("mp3", mp3_command))
