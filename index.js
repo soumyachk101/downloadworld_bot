@@ -245,10 +245,10 @@ bot.on('text', async (ctx) => {
 
 // Setup yt-dlp on startup
 console.log("Railway Setup: Updating yt-dlp...");
-const child = spawn('pip3', ['install', '--upgrade', 'yt-dlp', '-q']);
+const child = spawn('python3', ['-m', 'pip', 'install', '--upgrade', 'yt-dlp', '-q']);
 
 child.on('error', (err) => {
-  console.error("Warning: Could not run pip3 to update yt-dlp. Skipping update...", err.message);
+  console.error("Warning: Could not run python3 -m pip to update yt-dlp. Skipping update...", err.message);
   launchBot();
 });
 
