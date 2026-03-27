@@ -245,14 +245,26 @@ bot.on('text', async (ctx) => {
 
 // Setup yt-dlp on startup
 console.log("Railway Setup: Updating yt-dlp...");
-const child = spawn('pip', ['install', '--upgrade', 'yt-dlp', '-q']);
+const child = spawn('pip3', ['install', '--upgrade', 'yt-dlp', '-q']);
+
+child.on('error', (err) => {
+  console.error("Warning: Could not run pip3 to update yt-dlp. Skipping update...", err.message);
+  launchBot();
+});
+
 child.on('exit', () => {
-  console.log("yt-dlp updated! Launching bot...");
+  console.log("yt-dlp update check complete.");
+  launchBot();
+});
+
+function launchBot() {
+  console.log("Launching bot...");
   bot.launch({
     allowedUpdates: ['message', 'callback_query'],
     dropPendingUpdates: true
-  }).then(() => console.log("Bot is alive!"));
-});
+  }).then(() => console.log("Bot is alive! ✅"))
+    .catch(err => console.error("Critical Error: Bot failed to launch!", err.message));
+}
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
