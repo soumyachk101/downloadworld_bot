@@ -73,10 +73,10 @@ def setup_instaloader_session():
         return
 
     # Get the correct session file path where instaloader actually saves it
-    # On Windows: %APPDATA%\Instaloader\session-USERNAME
+    # On Windows: %LOCALAPPDATA%\Instaloader\session-USERNAME
     # On Unix/Linux/Mac: ~/.config/instaloader/session-USERNAME
     if sys.platform == "win32":
-        base_dir = os.path.join(os.getenv('APPDATA'), 'Instaloader')
+        base_dir = os.path.join(os.getenv('LOCALAPPDATA'), 'Instaloader')
     else:
         base_dir = os.path.expanduser('~/.config/instaloader')
 
