@@ -72,8 +72,15 @@ def setup_instaloader_session():
         print("Warning: INSTA_USERNAME missing — using anonymous session (rate-limits likely)")
         return
 
-    # Use instaloader's built-in function to get the correct session path for the platform
-    session_file = instaloader.get_session_file(INSTA_USERNAME)
+    # Get the correct session file path where instaloader actually saves it
+    # On Windows: %APPDATA%\Instaloader\session-USERNAME
+    # On Unix/Linux/Mac: ~/.config/instaloader/session-USERNAME
+    if sys.platform == "win32":
+        base_dir = os.path.join(os.getenv('APPDATA'), 'Instaloader')
+    else:
+        base_dir = os.path.expanduser('~/.config/instaloader')
+
+    session_file = os.path.join(base_dir, f'session-{INSTA_USERNAME}')
 
     if os.path.exists(session_file):
         try:
