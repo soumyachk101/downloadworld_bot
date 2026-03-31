@@ -3,7 +3,13 @@ import re
 import glob
 import asyncio
 import shutil
+import sys
 from dotenv import load_dotenv
+
+# Fix for Windows console encoding
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
