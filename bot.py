@@ -64,7 +64,7 @@ L = instaloader.Instaloader(
 def setup_instaloader_session():
     """
     Login priority:
-      1. Session file (~/.config/instaloader/session-USERNAME)
+      1. Session file (platform-specific location handled by instaloader)
       2. Username + Password from env
       3. Anonymous (public posts only, rate-limited heavily)
     """
@@ -72,7 +72,8 @@ def setup_instaloader_session():
         print("Warning: INSTA_USERNAME missing — using anonymous session (rate-limits likely)")
         return
 
-    session_file = os.path.expanduser(f"~/.config/instaloader/session-{INSTA_USERNAME}")
+    # Use instaloader's built-in function to get the correct session path for the platform
+    session_file = instaloader.get_session_file(INSTA_USERNAME)
 
     if os.path.exists(session_file):
         try:
