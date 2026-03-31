@@ -16,10 +16,9 @@ Your credentials have been exposed in logs. Immediately:
 
 **Cause:** YouTube is blocking yt-dlp's anonymous access.
 
-**Solution:**
+**Solution Option 1: Cookies (Recommended)**
 1. Install a cookies export extension:
-   - Chrome: "Get cookies.txt" or "cookies.txt"
-   - Firefox: "cookies.txt"
+   - Chrome/Firefox: "Get cookies.txt" or "cookies.txt"
    - Edge: "Get cookies.txt"
 
 2. Export cookies while logged into YouTube:
@@ -36,7 +35,24 @@ Your credentials have been exposed in logs. Immediately:
 
 5. Restart the bot
 
-**Note:** Cookies expire after some time. You'll need to re-export periodically.
+**Solution Option 2: Visitor Data (No Cookies File)**
+If you don't want to manage cookies files, you can extract YouTube's visitor data token:
+
+1. Open YouTube.com in your browser (logged in)
+2. Press F12 to open DevTools
+3. Go to Console tab
+4. Paste this command and press Enter:
+   ```javascript
+   copy(JSON.parse(localStorage.getItem('youtube-visitor-data')))
+   ```
+5. This copies an object to clipboard. Copy the `visitorData` value.
+6. Add to `.env`:
+   ```
+   YOUTUBE_EXTRACTOR_ARGS="youtube:player_skip=webpage,configs;visitor_data=YOUR_VISITOR_DATA_HERE"
+   ```
+7. Restart the bot
+
+**Note:** Visitor data may also expire, but typically lasts longer than cookies. You may need to re-extract periodically.
 
 ### Instagram - CHECKPOINT REQUIRED
 **Symptom:** `Instaloader login failed: Login: Checkpoint required`
@@ -88,6 +104,7 @@ python setup_assistant.py
 - `INSTA_USERNAME`: Instagram username (for private posts)
 - `INSTA_PASSWORD`: Instagram password (for private posts) - prefer session file
 - `YOUTUBE_COOKIES_FILE`: Path to cookies.txt file for YouTube
+- `YOUTUBE_EXTRACTOR_ARGS`: yt-dlp extractor arguments (alternative to cookies), e.g. `"youtube:player_skip=webpage,configs;visitor_data=VISITOR_DATA"`
 
 ## File Structure
 ```

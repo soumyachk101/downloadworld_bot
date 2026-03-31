@@ -40,6 +40,8 @@ if YOUTUBE_COOKIES_FILE and not os.path.exists(YOUTUBE_COOKIES_FILE):
     print("   YouTube downloads may fail due to bot detection.")
     YOUTUBE_COOKIES_FILE = None
 
+YOUTUBE_EXTRACTOR_ARGS = os.getenv("YOUTUBE_EXTRACTOR_ARGS", "")
+
 # ─── Groq Client ─────────────────────────────────────────────────────────────
 groq_client = None
 if GROQ_API_KEY:
@@ -206,6 +208,33 @@ async def handle_ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mod
 
 # ─── Downloads ───────────────────────────────────────────────────────────────
 
+def _parse_extractor_args(args_str: str) -> dict:
+    """Parse YOUTUBE_EXTRACTOR_ARGS into yt-dlp format.
+
+    Format: "youtubetab:skip=webpage" "youtube:player_skip=webpage,configs;visitor_data=VALUE"
+    Returns: {'youtubetab': {'skip': 'webpage'}, 'youtube': {'player_skip': 'webpage,configs', 'visitor_data': 'VALUE'}}
+    """
+    if not args_str:
+        return {}
+
+    result = {}
+    # Split by spaces, but respect potential quoted sections
+    parts = args_str.strip().split()
+    for part in parts:
+        if ':' not in part:
+            continue
+        extractor, args_part = part.split(':', 1)
+        args_dict = {}
+        # Split multiple args by semicolon
+        for arg in args_part.split(';'):
+            if '=' in arg:
+                key, value = arg.split('=', 1)
+                args_dict[key] = value
+        if args_dict:
+            result[extractor] = args_dict
+    return result
+
+
 def download_video(url: str, output_path: str, audio_only: bool = False, cookies_file: str = None) -> str:
     """Blocking yt-dlp download — run via asyncio.to_thread."""
     ydl_opts = {
@@ -216,6 +245,11 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
     }
     if cookies_file:
         ydl_opts['cookiefile'] = cookies_file
+    if YOUTUBE_EXTRACTOR_ARGS:
+        extractor_args = _parse_extractor_args(YOUTUBE_EXTRACTOR_ARGS)
+        if extractor_args:
+            ydl_opts['extractor_args'] = extractor_args
+            print(f"🔧 Using extractor args: {extractor_args}")
     if audio_only:
         ydl_opts['postprocessors'] = [{
             'key': 'FFmpegExtractAudio',
