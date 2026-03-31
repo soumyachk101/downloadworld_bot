@@ -34,6 +34,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 INSTA_USERNAME = os.getenv("INSTA_USERNAME")   # Add these in Railway/env
 INSTA_PASSWORD = os.getenv("INSTA_PASSWORD")
+YOUTUBE_COOKIES_FILE = os.getenv("YOUTUBE_COOKIES_FILE")
 
 # ─── Groq Client ─────────────────────────────────────────────────────────────
 groq_client = None
@@ -188,7 +189,7 @@ async def handle_ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mod
 
 # ─── Downloads ───────────────────────────────────────────────────────────────
 
-def download_video(url: str, output_path: str, audio_only: bool = False) -> str:
+def download_video(url: str, output_path: str, audio_only: bool = False, cookies_file: str = None) -> str:
     """Blocking yt-dlp download — run via asyncio.to_thread."""
     ydl_opts = {
         'format': 'bestaudio/best' if audio_only else 'best[filesize<50M]/best',
@@ -196,6 +197,8 @@ def download_video(url: str, output_path: str, audio_only: bool = False) -> str:
         'quiet': True,
         'no_warnings': True,
     }
+    if cookies_file:
+        ydl_opts['cookiefile'] = cookies_file
     if audio_only:
         ydl_opts['postprocessors'] = [{
             'key': 'FFmpegExtractAudio',
@@ -268,7 +271,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.makedirs(download_dir, exist_ok=True)
 
     try:
-        await asyncio.to_thread(download_video, url, download_dir, True)
+        await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE)
 
         # yt-dlp converts to .mp3 after postprocessing — glob for it
         mp3_files = glob.glob(f"{download_dir}/*.mp3")
@@ -414,7 +417,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif any(d in url for d in ("youtube.com", "youtu.be", "twitter.com", "x.com", "facebook.com", "fb.watch")):
             try:
-                file_path = await asyncio.to_thread(download_video, url, download_dir)
+                file_path = await asyncio.to_thread(download_video, url, download_dir, False, YOUTUBE_COOKIES_FILE)
 
                 # yt-dlp sometimes gives wrong ext in prepare_filename; find actual file
                 if not os.path.exists(file_path):
