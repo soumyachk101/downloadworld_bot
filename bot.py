@@ -35,6 +35,10 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 INSTA_USERNAME = os.getenv("INSTA_USERNAME")   # Add these in Railway/env
 INSTA_PASSWORD = os.getenv("INSTA_PASSWORD")
 YOUTUBE_COOKIES_FILE = os.getenv("YOUTUBE_COOKIES_FILE")
+if YOUTUBE_COOKIES_FILE and not os.path.exists(YOUTUBE_COOKIES_FILE):
+    print(f"⚠️  YOUTUBE_COOKIES_FILE is set but file not found: {YOUTUBE_COOKIES_FILE}")
+    print("   YouTube downloads may fail due to bot detection.")
+    YOUTUBE_COOKIES_FILE = None
 
 # ─── Groq Client ─────────────────────────────────────────────────────────────
 groq_client = None
@@ -75,6 +79,8 @@ def setup_instaloader_session():
             return
         except Exception as e:
             print(f"⚠️  Session file load failed ({e}), trying password login...")
+    else:
+        print(f"ℹ️  No session file found at {session_file}")
 
     if INSTA_PASSWORD:
         try:
@@ -82,7 +88,18 @@ def setup_instaloader_session():
             L.save_session_to_file(session_file)
             print(f"✅ Instaloader: logged in as @{INSTA_USERNAME}, session saved.")
         except Exception as e:
-            print(f"❌ Instaloader login failed: {e} — falling back to anonymous")
+            error_msg = str(e).lower()
+            if "checkpoint" in error_msg or "challenge" in error_msg:
+                print(f"❌ Instagram checkpoint required!")
+                print(f"   Your account needs additional verification.")
+                print(f"   Steps to fix:")
+                print(f"   1. Log into https://instagram.com in your browser")
+                print(f"   2. Complete any security challenges")
+                print(f"   3. Or create a session file manually:")
+                print(f"      instaloader --login {INSTA_USERNAME}")
+            else:
+                print(f"❌ Instaloader login failed: {e}")
+            print(f"   Falling back to anonymous session (rate-limited).")
     else:
         print("Warning: INSTA_PASSWORD missing — using anonymous session")
 
