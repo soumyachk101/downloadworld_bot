@@ -55,13 +55,27 @@ If you don't want to manage cookies files, you can extract YouTube's visitor dat
 **Note:** Visitor data may also expire, but typically lasts longer than cookies. You may need to re-extract periodically.
 
 ### Instagram - CHECKPOINT REQUIRED
-**Symptom:** `Instaloader login failed: Login: Checkpoint required`
+**Symptom:** `Instaloader login failed: Login: Checkpoint required` OR `"fail" status`
 
-**Cause:** Instagram requires additional verification (2FA/session validation).
+**Cause:** Instagram requires additional verification (2FA/session validation). This often happens when logging in from a different location (e.g., cloud server/container).
 
-**Solutions (try in order):**
+**Solutions:**
 
-#### Option 1: Manual Session File (Recommended)
+#### Option 1: Instagram Cookies (Easiest for Containers/Cloud)
+1. Install a cookies export extension in your browser (e.g., "Get cookies.txt").
+2. Go to https://instagram.com while logged in.
+3. Export cookies as `instagram_cookies.txt` (Netscape format).
+4. Upload `instagram_cookies.txt` to your bot's directory.
+5. Add to `.env`:
+   ```
+   INSTAGRAM_COOKIES_FILE=instagram_cookies.txt
+   ```
+6. Remove `INSTA_PASSWORD` from `.env` (optional, cookies are more reliable).
+7. Restart the bot.
+
+The bot will load the cookies and create a session file automatically.
+
+#### Option 2: Manual Session File (Local/Linux)
 ```bash
 # Install instaloader if not already installed
 pip install instaloader
@@ -71,21 +85,26 @@ instaloader --login _lost_in_pixels
 # Enter password when prompted
 ```
 
-The session file will be saved to `~/.config/instaloader/session-_lost_in_pixels`. The bot automatically uses this if it exists.
+The session file will be saved to platform-specific location:
+- **Windows:** `%LOCALAPPDATA%\Instaloader\session-_lost_in_pixels`
+- **Linux/Mac:** `~/.config/instaloader/session-_lost_in_pixels`
 
-#### Option 2: Resolve Checkpoint Manually
+The bot automatically uses this if it exists.
+
+**Note:** If you're running the bot in a container (Railway/Render), you need to create the session file inside that container, which is difficult. Use **Option 1 (cookies)** instead.
+
+#### Option 3: Use Cookies to Create Session (One-time)
+If you already have Instagram cookies exported:
+```bash
+instaloader --load-cookies instagram_cookies.txt --login _lost_in_pixels
+```
+This creates a session file you can reuse.
+
+#### Option 4: Resolve Checkpoint Manually
 1. Log into Instagram.com in your browser
 2. Complete any security challenges (email/SMS verification)
 3. Make sure your account has no login alerts
-4. Retry the bot
-
-#### Option 3: Use Session File with Cookies
-Instead of password, you can export Instagram cookies and convert to instaloader session:
-```bash
-# Export cookies using browser extension
-# Then convert:
-instaloader --load-cookies insta_cookies.txt --login _lost_in_pixels
-```
+4. Retry creating the session file
 
 ## Verify Your Setup
 
@@ -102,7 +121,8 @@ python setup_assistant.py
 
 ### Optional:
 - `INSTA_USERNAME`: Instagram username (for private posts)
-- `INSTA_PASSWORD`: Instagram password (for private posts) - prefer session file
+- `INSTA_PASSWORD`: Instagram password (for private posts) - prefer session file or cookies
+- `INSTAGRAM_COOKIES_FILE`: Path to Instagram cookies.txt file (byass checkpoint issues, great for containers)
 - `YOUTUBE_COOKIES_FILE`: Path to cookies.txt file for YouTube
 - `YOUTUBE_EXTRACTOR_ARGS`: yt-dlp extractor arguments (alternative to cookies), e.g. `"youtube:player_skip=webpage,configs;visitor_data=VISITOR_DATA"`
 

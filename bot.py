@@ -41,6 +41,10 @@ if YOUTUBE_COOKIES_FILE and not os.path.exists(YOUTUBE_COOKIES_FILE):
     YOUTUBE_COOKIES_FILE = None
 
 YOUTUBE_EXTRACTOR_ARGS = os.getenv("YOUTUBE_EXTRACTOR_ARGS", "")
+INSTAGRAM_COOKIES_FILE = os.getenv("INSTAGRAM_COOKIES_FILE")
+if INSTAGRAM_COOKIES_FILE and not os.path.exists(INSTAGRAM_COOKIES_FILE):
+    print(f"⚠️  INSTAGRAM_COOKIES_FILE is set but file not found: {INSTAGRAM_COOKIES_FILE}")
+    INSTAGRAM_COOKIES_FILE = None
 
 # ─── Groq Client ─────────────────────────────────────────────────────────────
 groq_client = None
@@ -64,9 +68,10 @@ L = instaloader.Instaloader(
 def setup_instaloader_session():
     """
     Login priority:
-      1. Session file (platform-specific location handled by instaloader)
-      2. Username + Password from env
-      3. Anonymous (public posts only, rate-limited heavily)
+      1. Session file (platform-specific location)
+      2. Instagram cookies file (INSTAGRAM_COOKIES_FILE)
+      3. Username + Password from env
+      4. Anonymous (public posts only, rate-limited heavily)
     """
     if not INSTA_USERNAME:
         print("Warning: INSTA_USERNAME missing — using anonymous session (rate-limits likely)")
@@ -82,15 +87,53 @@ def setup_instaloader_session():
 
     session_file = os.path.join(base_dir, f'session-{INSTA_USERNAME}')
 
+    # 1. Try to load existing session file
     if os.path.exists(session_file):
         try:
             L.load_session_from_file(INSTA_USERNAME, session_file)
             print(f"✅ Instaloader: session loaded for @{INSTA_USERNAME}")
             return
         except Exception as e:
-            print(f"⚠️  Session file load failed ({e}), trying password login...")
-    else:
-        print(f"ℹ️  No session file found at {session_file}")
+            print(f"⚠️  Session file load failed ({e}), trying next method...")
+
+    # 2. Try cookies file if provided
+    if INSTAGRAM_COOKIES_FILE:
+        try:
+            L.context.load_cookies(INSTAGRAM_COOKIES_FILE)
+            if L.context.is_logged_in:
+                # Save session for future use
+                os.makedirs(os.path.dirname(session_file), exist_ok=True)
+                L.save_session_to_file(session_file)
+                print(f"✅ Instaloader: logged in via cookies, session saved to {session_file}")
+                return
+            else:
+                print(f"⚠️  Instagram cookies file loaded but not logged in")
+        except Exception as e:
+            print(f"⚠️  Failed to load Instagram cookies: {e}")
+
+    # 3. Try password login
+    if INSTA_PASSWORD:
+        try:
+            L.login(INSTA_USERNAME, INSTA_PASSWORD)
+            os.makedirs(os.path.dirname(session_file), exist_ok=True)
+            L.save_session_to_file(session_file)
+            print(f"✅ Instaloader: logged in as @{INSTA_USERNAME}, session saved.")
+            return
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "checkpoint" in error_msg or "challenge" in error_msg:
+                print(f"❌ Instagram checkpoint required!")
+                print(f"   Your account needs additional verification.")
+                print(f"   Steps to fix:")
+                print(f"   1. Log into https://instagram.com in your browser")
+                print(f"   2. Complete any security challenges")
+                print(f"   3. Or use cookies file instead of password:")
+                print(f"      Export Instagram cookies and set INSTAGRAM_COOKIES_FILE")
+            else:
+                print(f"❌ Instaloader login failed: {e}")
+
+    # 4. Fallback to anonymous
+    print(f"⚠️  Falling back to anonymous session (rate-limited).")
 
     if INSTA_PASSWORD:
         try:
