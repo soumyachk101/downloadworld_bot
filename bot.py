@@ -158,7 +158,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Main tera all-in-one Telegram bot hoon.\n\n"
         "📥 *Media Downloader*\n"
         "Mujhe kisi bhi YouTube, Instagram, Twitter (X), ya Facebook video ka link bhej "
-        "aur main tujhe media bhej dunga (<50MB).\n\n"
+        "aur main tujhe media bhej dunga (<50MB).\n"
+        "MP3 ke liye `/mp3 <youtube_link>` ya link ke saath `mp3` likh de.\n\n"
         "🤖 *AI Fun Modes*\n"
         "Niche wale buttons pe click karke AI ke maze le!"
     )
@@ -452,6 +453,7 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 URL_PATTERN = re.compile(
     r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
 )
+AUDIO_KEYWORDS_PATTERN = re.compile(r'\b(mp3|audio|song|music)\b', re.IGNORECASE)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
@@ -470,7 +472,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = urls[0]
-    status_msg = await update.message.reply_text("⏳ Download ho raha hai... ruk bhai!")
+    lower_text = user_text.lower()
+    is_audio_request = (
+        bool(AUDIO_KEYWORDS_PATTERN.search(lower_text))
+        and any(d in url for d in ("youtube.com", "youtu.be"))
+    )
+    status_text = "⏳ MP3 ban raha hai... thoda ruk bhai!" if is_audio_request else "⏳ Download ho raha hai... ruk bhai!"
+    status_msg = await update.message.reply_text(status_text)
     download_dir = f"downloads_{update.effective_user.id}_{update.message.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
@@ -508,7 +516,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif any(d in url for d in ("youtube.com", "youtu.be", "twitter.com", "x.com", "facebook.com", "fb.watch")):
             try:
-                file_path = await asyncio.to_thread(download_video, url, download_dir, False, YOUTUBE_COOKIES_FILE)
+                file_path = await asyncio.to_thread(
+                    download_video, url, download_dir, is_audio_request, YOUTUBE_COOKIES_FILE
+                )
 
                 # yt-dlp sometimes gives wrong ext in prepare_filename; find actual file
                 if not os.path.exists(file_path):
@@ -516,22 +526,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     candidates = glob.glob(f"{base}.*")
                     file_path = candidates[0] if candidates else file_path
 
+                if is_audio_request:
+                    if not (os.path.exists(file_path) and str(file_path).lower().endswith(".mp3")):
+                        mp3_files = sorted(glob.glob(f"{download_dir}/*.mp3"))
+                        file_path = mp3_files[0] if mp3_files else ""
+
                 if file_path and os.path.exists(file_path):
                     if os.path.getsize(file_path) <= 50 * 1024 * 1024:
-                        with open(file_path, 'rb') as video:
-                            await update.message.reply_video(video)
+                        with open(file_path, 'rb') as media:
+                            if is_audio_request:
+                                await update.message.reply_audio(media)
+                            else:
+                                await update.message.reply_video(media)
                         await status_msg.delete()
                     else:
                         await status_msg.edit_text(
-                            "Bhai video 50MB se badi hai, main sirf 50MB tak ka bhej sakta hoon! 😔"
+                            "Bhai MP3 50MB se badi hai! 😔" if is_audio_request
+                            else "Bhai video 50MB se badi hai, main sirf 50MB tak ka bhej sakta hoon! 😔"
                         )
                 else:
-                    await status_msg.edit_text("Bhai file nahi mili download ke baad. 😔")
+                    await status_msg.edit_text(
+                        "Bhai MP3 nahi bani. Link check kar! 😔" if is_audio_request
+                        else "Bhai file nahi mili download ke baad. 😔"
+                    )
 
             except Exception as e:
                 print(f"yt-dlp error: {e}")
                 await status_msg.edit_text(
-                    "Bhai video download nahi hui. Private ya age-restricted ho sakti hai! 😔"
+                    "Bhai MP3 nahi bani. YouTube link check kar ya private ho sakti hai! 😔" if is_audio_request
+                    else "Bhai video download nahi hui. Private ya age-restricted ho sakti hai! 😔"
                 )
         else:
             await status_msg.edit_text(
@@ -573,6 +596,7 @@ def main():
 
     app.add_handler(CommandHandler("start",     start))
     app.add_handler(CommandHandler("mp3",       mp3_command))
+    app.add_handler(CommandHandler("audio",     mp3_command))
     app.add_handler(CommandHandler("translate", translate_command))
     app.add_handler(CommandHandler("tr",        translate_command))
     app.add_handler(CommandHandler("remind",    remind_command))

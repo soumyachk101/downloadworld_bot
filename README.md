@@ -6,6 +6,7 @@ Production-ready Telegram bot for downloading videos from YouTube, Instagram, Tw
 
 ### 📥 Media Downloader
 - **YouTube** - Download videos (best quality < 50MB)
+- **YouTube MP3** - Convert and download audio as MP3
 - **Instagram** - Posts & Reels download
 - **Twitter/X** - Video downloads
 - **Facebook** - Video downloads
@@ -174,8 +175,17 @@ https://twitter.com/user/status/...
 https://facebook.com/watch?v=...
 ```
 
+### Download MP3
+Use any one of these:
+```bash
+/mp3 https://youtube.com/watch?v=...
+/audio https://youtube.com/watch?v=...
+```
+
+Or send YouTube link with text like `mp3`, `audio`, `song`, or `music`.
+
 Bot will:
-1. Show "⏳ Download ho raha hai... ruk bhai!"
+1. Show "⏳ Download ho raha hai... ruk bhai!" (video) or "⏳ MP3 ban raha hai... thoda ruk bhai!" (audio)
 2. Download the video
 3. Send it back to you
 4. Cleanup temporary files
