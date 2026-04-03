@@ -527,10 +527,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     file_path = candidates[0] if candidates else file_path
 
                 if is_audio_request:
-                    if not (str(file_path).lower().endswith(".mp3") and os.path.exists(file_path)):
+                    if not (os.path.exists(file_path) and str(file_path).lower().endswith(".mp3")):
                         mp3_files = sorted(glob.glob(f"{download_dir}/*.mp3"))
-                        if mp3_files:
-                            file_path = mp3_files[0]
+                        file_path = mp3_files[0] if mp3_files else ""
 
                 if file_path and os.path.exists(file_path):
                     if os.path.getsize(file_path) <= 50 * 1024 * 1024:
