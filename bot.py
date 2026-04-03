@@ -457,7 +457,6 @@ AUDIO_KEYWORDS_PATTERN = re.compile(r'\b(mp3|audio|song|music)\b', re.IGNORECASE
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    lower_text = user_text.lower()
     mode = context.user_data.get("mode")
 
     if mode:
@@ -473,6 +472,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = urls[0]
+    lower_text = user_text.lower()
     is_audio_request = (
         bool(AUDIO_KEYWORDS_PATTERN.search(lower_text))
         and any(d in url for d in ("youtube.com", "youtu.be"))
@@ -527,7 +527,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     file_path = candidates[0] if candidates else file_path
 
                 if is_audio_request:
-                    if not str(file_path).lower().endswith(".mp3") or not os.path.exists(file_path):
+                    if not (str(file_path).lower().endswith(".mp3") and os.path.exists(file_path)):
                         mp3_files = sorted(glob.glob(f"{download_dir}/*.mp3"))
                         if mp3_files:
                             file_path = mp3_files[0]
