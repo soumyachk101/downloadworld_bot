@@ -472,8 +472,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = urls[0]
-    wants_audio = bool(re.search(r'\b(mp3|audio|song|music)\b', lower_text))
-    is_audio_request = wants_audio and any(d in url for d in ("youtube.com", "youtu.be"))
+    is_audio_request = (
+        bool(re.search(r'\b(mp3|audio|song|music)\b', lower_text))
+        and any(d in url for d in ("youtube.com", "youtu.be"))
+    )
     status_text = "⏳ MP3 ban raha hai... thoda ruk bhai!" if is_audio_request else "⏳ Download ho raha hai... ruk bhai!"
     status_msg = await update.message.reply_text(status_text)
     download_dir = f"downloads_{update.effective_user.id}_{update.message.message_id}"
@@ -524,7 +526,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     file_path = candidates[0] if candidates else file_path
 
                 if is_audio_request:
-                    mp3_files = glob.glob(f"{download_dir}/*.mp3")
+                    mp3_files = sorted(glob.glob(f"{download_dir}/*.mp3"))
                     if mp3_files:
                         file_path = mp3_files[0]
 
