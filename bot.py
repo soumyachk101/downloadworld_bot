@@ -96,18 +96,25 @@ def setup_instaloader_session():
         except Exception as e:
             print(f"⚠️  Session file load failed ({e}), trying next method...")
 
-    # 2. Try cookies file if provided
+    # 2. Try cookies file if provided (Netscape format -> requests Session)
     if INSTAGRAM_COOKIES_FILE:
         try:
-            L.context.load_cookies(INSTAGRAM_COOKIES_FILE)
-            if L.context.is_logged_in:
-                # Save session for future use
+            import http.cookiejar
+            jar = http.cookiejar.MozillaCookieJar(INSTAGRAM_COOKIES_FILE)
+            jar.load(ignore_discard=True, ignore_expires=True)
+            # Check if sessionid cookie is present
+            cookie_names = {c.name for c in jar}
+            has_session = "sessionid" in cookie_names
+            if has_session:
+                from requests.cookies import merge_cookies
+                merge_cookies(L.context._session.cookies, jar)
+                L.context._session.cookies.clear_expired_cookies()
                 os.makedirs(os.path.dirname(session_file), exist_ok=True)
                 L.save_session_to_file(session_file)
                 print(f"✅ Instaloader: logged in via cookies, session saved to {session_file}")
                 return
             else:
-                print(f"⚠️  Instagram cookies file loaded but not logged in")
+                print("⚠️  Instagram cookies file has no sessionid — not logged in")
         except Exception as e:
             print(f"⚠️  Failed to load Instagram cookies: {e}")
 
