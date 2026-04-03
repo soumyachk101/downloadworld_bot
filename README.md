@@ -185,7 +185,7 @@ Use any one of these:
 Or send YouTube link with text like `mp3`, `audio`, `song`, or `music`.
 
 Bot will:
-1. Show "⏳ Download ho raha hai... ruk bhai!"
+1. Show "⏳ Download ho raha hai... ruk bhai!" (video) or "⏳ MP3 ban raha hai... thoda ruk bhai!" (audio)
 2. Download the video
 3. Send it back to you
 4. Cleanup temporary files
