@@ -100,6 +100,7 @@ def setup_instaloader_session():
     if INSTAGRAM_COOKIES_FILE:
         try:
             import http.cookiejar
+            import traceback
             from requests.cookies import RequestsCookieJar
             jar = RequestsCookieJar()
             ncjar = http.cookiejar.MozillaCookieJar(INSTAGRAM_COOKIES_FILE)
@@ -118,6 +119,7 @@ def setup_instaloader_session():
                 print("⚠️  Instagram cookies file has no sessionid — not logged in")
         except Exception as e:
             print(f"⚠️  Failed to load Instagram cookies: {e}")
+            traceback.print_exc()
 
     # 3. Try password login
     if INSTA_PASSWORD:
