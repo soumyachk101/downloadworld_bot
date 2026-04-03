@@ -453,6 +453,7 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 URL_PATTERN = re.compile(
     r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
 )
+AUDIO_KEYWORDS_PATTERN = re.compile(r'\b(mp3|audio|song|music)\b')
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
@@ -473,7 +474,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = urls[0]
     is_audio_request = (
-        bool(re.search(r'\b(mp3|audio|song|music)\b', lower_text))
+        bool(AUDIO_KEYWORDS_PATTERN.search(lower_text))
         and any(d in url for d in ("youtube.com", "youtu.be"))
     )
     status_text = "⏳ MP3 ban raha hai... thoda ruk bhai!" if is_audio_request else "⏳ Download ho raha hai... ruk bhai!"
