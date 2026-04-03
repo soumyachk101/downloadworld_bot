@@ -133,28 +133,7 @@ def setup_instaloader_session():
                 print(f"❌ Instaloader login failed: {e}")
 
     # 4. Fallback to anonymous
-    print(f"⚠️  Falling back to anonymous session (rate-limited).")
-
-    if INSTA_PASSWORD:
-        try:
-            L.login(INSTA_USERNAME, INSTA_PASSWORD)
-            L.save_session_to_file(session_file)
-            print(f"✅ Instaloader: logged in as @{INSTA_USERNAME}, session saved.")
-        except Exception as e:
-            error_msg = str(e).lower()
-            if "checkpoint" in error_msg or "challenge" in error_msg:
-                print(f"❌ Instagram checkpoint required!")
-                print(f"   Your account needs additional verification.")
-                print(f"   Steps to fix:")
-                print(f"   1. Log into https://instagram.com in your browser")
-                print(f"   2. Complete any security challenges")
-                print(f"   3. Or create a session file manually:")
-                print(f"      instaloader --login {INSTA_USERNAME}")
-            else:
-                print(f"❌ Instaloader login failed: {e}")
-            print(f"   Falling back to anonymous session (rate-limited).")
-    else:
-        print("Warning: INSTA_PASSWORD missing — using anonymous session")
+    print("⚠️  Falling back to anonymous session (rate-limited).")
 
 # ─── Scheduler ───────────────────────────────────────────────────────────────
 scheduler = AsyncIOScheduler()
