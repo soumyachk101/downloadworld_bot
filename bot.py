@@ -100,18 +100,19 @@ def setup_instaloader_session():
     if INSTAGRAM_COOKIES_FILE:
         try:
             import http.cookiejar
-            jar = http.cookiejar.MozillaCookieJar(INSTAGRAM_COOKIES_FILE)
-            jar.load(ignore_discard=True, ignore_expires=True)
+            from requests.cookies import RequestsCookieJar
+            jar = RequestsCookieJar()
+            ncjar = http.cookiejar.MozillaCookieJar(INSTAGRAM_COOKIES_FILE)
+            ncjar.load(ignore_discard=True, ignore_expires=True)
+            # Convert to RequestsCookieJar
+            for cookie in ncjar:
+                jar.set(cookie.name, cookie.value, domain=cookie.domain,
+                        path=cookie.path, secure=cookie.secure)
             # Check if sessionid cookie is present
-            cookie_names = {c.name for c in jar}
-            has_session = "sessionid" in cookie_names
+            has_session = "sessionid" in set(jar.keys())
             if has_session:
-                from requests.cookies import merge_cookies
-                merge_cookies(L.context._session.cookies, jar)
-                L.context._session.cookies.clear_expired_cookies()
-                os.makedirs(os.path.dirname(session_file), exist_ok=True)
-                L.save_session_to_file(session_file)
-                print(f"✅ Instaloader: logged in via cookies, session saved to {session_file}")
+                L.context._session.cookies = jar
+                print(f"✅ Instaloader: logged in via cookies ({len(jar)} cookies loaded)")
                 return
             else:
                 print("⚠️  Instagram cookies file has no sessionid — not logged in")
