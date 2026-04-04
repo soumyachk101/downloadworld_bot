@@ -12,7 +12,6 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding='utf-8')
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import Conflict, NetworkError
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -24,7 +23,6 @@ from telegram.ext import (
 
 import yt_dlp
 import instaloader
-from yt_dlp.utils import DownloadError
 from groq import AsyncGroq
 from deep_translator import GoogleTranslator
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -160,8 +158,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Main tera all-in-one Telegram bot hoon.\n\n"
         "📥 *Media Downloader*\n"
         "Mujhe kisi bhi YouTube, Instagram, Twitter (X), ya Facebook video ka link bhej "
-        "aur main tujhe media bhej dunga (<50MB).\n"
-        "MP3 ke liye `/mp3 <youtube_link>` ya link ke saath `mp3` likh de.\n\n"
+        "aur main tujhe media bhej dunga (<50MB).\n\n"
         "🤖 *AI Fun Modes*\n"
         "Niche wale buttons pe click karke AI ke maze le!"
     )
@@ -329,23 +326,12 @@ def download_instagram(url: str, output_path: str):
             )
         except Exception as e:
             err_str = str(e).lower()
-            is_auth_block = (
-                (
-                    "graphql/query" in err_str
-                    and ("403" in err_str or "forbidden" in err_str or "status code 403" in err_str)
-                )
-                or "login required" in err_str
-            )
             is_rate_limit = (
                 "401" in err_str
                 or "please wait" in err_str
                 or "429" in err_str
                 or "checkpoint" in err_str
             )
-            if is_auth_block:
-                raise PermissionError(
-                    "Instagram access blocked (403). Refresh your cookies/session and try again."
-                )
             if is_rate_limit and attempt < max_retries:
                 wait = 60 * attempt          # 60s → 120s → 180s
                 print(f"Instagram rate-limit (attempt {attempt}/{max_retries}), waiting {wait}s…")
@@ -360,25 +346,6 @@ def cleanup(path: str):
             shutil.rmtree(path)
     except Exception as e:
         print(f"Cleanup Error: {e}")
-
-
-async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    err = context.error
-    print(f"Unhandled error: {err}")
-
-    if isinstance(err, Conflict):
-        print("❌ Telegram polling conflict detected.")
-        print("   Another bot instance is already calling getUpdates for this token.")
-        print("   Stopping this instance now. Keep only one running instance, then redeploy.")
-        try:
-            await context.application.bot.delete_webhook(drop_pending_updates=True)
-        except Exception as webhook_err:
-            print(f"⚠️  Failed to delete webhook during conflict handling: {webhook_err}")
-        context.application.stop_running()
-        return
-
-    if isinstance(err, NetworkError):
-        print("⚠️  Temporary Telegram network issue; polling will retry automatically.")
 
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
@@ -485,7 +452,6 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 URL_PATTERN = re.compile(
     r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
 )
-AUDIO_KEYWORDS_PATTERN = re.compile(r'\b(mp3|audio|song|music)\b', re.IGNORECASE)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
@@ -504,13 +470,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = urls[0]
-    lower_text = user_text.lower()
-    is_audio_request = (
-        bool(AUDIO_KEYWORDS_PATTERN.search(lower_text))
-        and any(d in url for d in ("youtube.com", "youtu.be"))
-    )
-    status_text = "⏳ MP3 ban raha hai... thoda ruk bhai!" if is_audio_request else "⏳ Download ho raha hai... ruk bhai!"
-    status_msg = await update.message.reply_text(status_text)
+    status_msg = await update.message.reply_text("⏳ Download ho raha hai... ruk bhai!")
     download_dir = f"downloads_{update.effective_user.id}_{update.message.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
@@ -548,9 +508,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif any(d in url for d in ("youtube.com", "youtu.be", "twitter.com", "x.com", "facebook.com", "fb.watch")):
             try:
-                file_path = await asyncio.to_thread(
-                    download_video, url, download_dir, is_audio_request, YOUTUBE_COOKIES_FILE
-                )
+                file_path = await asyncio.to_thread(download_video, url, download_dir, False, YOUTUBE_COOKIES_FILE)
 
                 # yt-dlp sometimes gives wrong ext in prepare_filename; find actual file
                 if not os.path.exists(file_path):
@@ -558,45 +516,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     candidates = glob.glob(f"{base}.*")
                     file_path = candidates[0] if candidates else file_path
 
-                if is_audio_request:
-                    if not (os.path.exists(file_path) and str(file_path).lower().endswith(".mp3")):
-                        mp3_files = sorted(glob.glob(f"{download_dir}/*.mp3"))
-                        file_path = mp3_files[0] if mp3_files else ""
-
                 if file_path and os.path.exists(file_path):
                     if os.path.getsize(file_path) <= 50 * 1024 * 1024:
-                        with open(file_path, 'rb') as media:
-                            if is_audio_request:
-                                await update.message.reply_audio(media)
-                            else:
-                                await update.message.reply_video(media)
+                        with open(file_path, 'rb') as video:
+                            await update.message.reply_video(video)
                         await status_msg.delete()
                     else:
                         await status_msg.edit_text(
-                            "Bhai MP3 50MB se badi hai! 😔" if is_audio_request
-                            else "Bhai video 50MB se badi hai, main sirf 50MB tak ka bhej sakta hoon! 😔"
+                            "Bhai video 50MB se badi hai, main sirf 50MB tak ka bhej sakta hoon! 😔"
                         )
                 else:
-                    await status_msg.edit_text(
-                        "Bhai MP3 nahi bani. Link check kar! 😔" if is_audio_request
-                        else "Bhai file nahi mili download ke baad. 😔"
-                    )
+                    await status_msg.edit_text("Bhai file nahi mili download ke baad. 😔")
 
             except Exception as e:
                 print(f"yt-dlp error: {e}")
-                err_msg = str(e).lower()
-                if isinstance(e, DownloadError) and (
-                    "sign in to confirm" in err_msg
-                    or "not a bot" in err_msg
-                    or "use --cookies-from-browser or --cookies" in err_msg
-                ):
-                    await status_msg.edit_text(
-                        "YouTube bot check triggered. Set YOUTUBE_COOKIES_FILE in project env/config (e.g. youtube_cookies.txt), export fresh cookies, then try again. 😔"
-                    )
-                    return
                 await status_msg.edit_text(
-                    "Bhai MP3 nahi bani. YouTube link check kar ya private ho sakti hai! 😔" if is_audio_request
-                    else "Bhai video download nahi hui. Private ya age-restricted ho sakti hai! 😔"
+                    "Bhai video download nahi hui. Private ya age-restricted ho sakti hai! 😔"
                 )
         else:
             await status_msg.edit_text(
@@ -638,16 +573,14 @@ def main():
 
     app.add_handler(CommandHandler("start",     start))
     app.add_handler(CommandHandler("mp3",       mp3_command))
-    app.add_handler(CommandHandler("audio",     mp3_command))
     app.add_handler(CommandHandler("translate", translate_command))
     app.add_handler(CommandHandler("tr",        translate_command))
     app.add_handler(CommandHandler("remind",    remind_command))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_error_handler(global_error_handler)
 
     print("🤖 Bot is starting up... waiting for messages.")
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling()
 
 
 if __name__ == "__main__":
