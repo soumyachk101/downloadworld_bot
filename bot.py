@@ -12,6 +12,7 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding='utf-8')
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import Conflict, NetworkError
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -23,6 +24,7 @@ from telegram.ext import (
 
 import yt_dlp
 import instaloader
+from yt_dlp.utils import DownloadError
 from groq import AsyncGroq
 from deep_translator import GoogleTranslator
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -327,12 +329,23 @@ def download_instagram(url: str, output_path: str):
             )
         except Exception as e:
             err_str = str(e).lower()
+            is_auth_block = (
+                (
+                    "graphql/query" in err_str
+                    and ("403" in err_str or "forbidden" in err_str or "status code 403" in err_str)
+                )
+                or "login required" in err_str
+            )
             is_rate_limit = (
                 "401" in err_str
                 or "please wait" in err_str
                 or "429" in err_str
                 or "checkpoint" in err_str
             )
+            if is_auth_block:
+                raise PermissionError(
+                    "Instagram access blocked (403). Refresh your cookies/session and try again."
+                )
             if is_rate_limit and attempt < max_retries:
                 wait = 60 * attempt          # 60s → 120s → 180s
                 print(f"Instagram rate-limit (attempt {attempt}/{max_retries}), waiting {wait}s…")
@@ -347,6 +360,25 @@ def cleanup(path: str):
             shutil.rmtree(path)
     except Exception as e:
         print(f"Cleanup Error: {e}")
+
+
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    err = context.error
+    print(f"Unhandled error: {err}")
+
+    if isinstance(err, Conflict):
+        print("❌ Telegram polling conflict detected.")
+        print("   Another bot instance is already calling getUpdates for this token.")
+        print("   Stopping this instance now. Keep only one running instance, then redeploy.")
+        try:
+            await context.application.bot.delete_webhook(drop_pending_updates=True)
+        except Exception as webhook_err:
+            print(f"⚠️  Failed to delete webhook during conflict handling: {webhook_err}")
+        context.application.stop_running()
+        return
+
+    if isinstance(err, NetworkError):
+        print("⚠️  Temporary Telegram network issue; polling will retry automatically.")
 
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
@@ -552,6 +584,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             except Exception as e:
                 print(f"yt-dlp error: {e}")
+                err_msg = str(e).lower()
+                if isinstance(e, DownloadError) and (
+                    "sign in to confirm" in err_msg
+                    or "not a bot" in err_msg
+                    or "use --cookies-from-browser or --cookies" in err_msg
+                ):
+                    await status_msg.edit_text(
+                        "YouTube bot check triggered. Set YOUTUBE_COOKIES_FILE in project env/config (e.g. youtube_cookies.txt), export fresh cookies, then try again. 😔"
+                    )
+                    return
                 await status_msg.edit_text(
                     "Bhai MP3 nahi bani. YouTube link check kar ya private ho sakti hai! 😔" if is_audio_request
                     else "Bhai video download nahi hui. Private ya age-restricted ho sakti hai! 😔"
@@ -602,9 +644,10 @@ def main():
     app.add_handler(CommandHandler("remind",    remind_command))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(global_error_handler)
 
     print("🤖 Bot is starting up... waiting for messages.")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
