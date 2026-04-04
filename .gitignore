@@ -4,3 +4,7 @@ cookies.txt
 dl_*/
 .claude/
 *.log
+
+# Python cache
+__pycache__/
+*.py[cod]
