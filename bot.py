@@ -482,7 +482,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await status_msg.edit_text(f"❌ {e}")
                 return
 
-            files = glob.glob(f"{download_dir}/**/*", recursive=True) + glob.glob(f"{download_dir}/*")
+            # Fix: Only search once to avoid duplicate files
+            files = glob.glob(f"{download_dir}/**/*", recursive=True)
             media_sent = False
 
             for f in files:
