@@ -180,22 +180,20 @@ scheduler = AsyncIOScheduler()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
-        "✨ *Welcome to Everything Downloader!* ✨\n\n"
-        "I am a professional media downloader bot. I can download videos and audio from almost anywhere!\n\n"
-        "📥 *Quick Commands:*\n"
-        "• `/mp4 <link>` - Download Video\n"
-        "• `/mp3 <link>` - Download Audio\n"
-        "• `/search <query>` - Search YouTube\n"
-        "• `/help` - View all features\n\n"
-        "🤖 *AI Fun Modes:* (Click below)"
+        "👋 *Hi! Welcome to Everything Downloader Pro* 🚀\n\n"
+        "I can download high-quality videos and MP3s from almost any platform like YouTube, Instagram, and more!\n\n"
+        "📢 *Quick Links:*\n"
+        "• Use `/help` to see all commands\n"
+        "• Paste a link to start downloading\n"
+        "• Use `/search` to find YouTube videos\n\n"
+        "Choose an option below to explore features:"
     )
     keyboard = [
-        [InlineKeyboardButton("😂 Roast Karo",    callback_data="mode_roast"),
-         InlineKeyboardButton("🎤 Shayari Likho",  callback_data="mode_shayari")],
-        [InlineKeyboardButton("🎵 Rap Banao",      callback_data="mode_rap"),
-         InlineKeyboardButton("🔮 Bhavishya Batao", callback_data="mode_fortune")],
-        [InlineKeyboardButton("📝 Story Likho",    callback_data="mode_story"),
-         InlineKeyboardButton("🍕 Recipe Batao",   callback_data="mode_recipe")]
+        [
+            InlineKeyboardButton("📖 View Full Help", callback_data="show_help"),
+            InlineKeyboardButton("📊 My Stats", callback_data="show_stats")
+        ],
+        [InlineKeyboardButton("🔥 AI Fun Modes", callback_data="show_ai_modes")]
     ]
     await update.message.reply_text(
         welcome_text,
@@ -249,6 +247,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "mode_story":   ("story",   "Kis topic pe story likhun? 📝"),
         "mode_recipe":  ("recipe",  "Kaunsi recipe seekhni hai? Ingredients batao! 🍕"),
     }
+
+    if query.data == "show_help":
+        await help_command(update, context)
+        return
+    elif query.data == "show_stats":
+        await stats_command(update, context)
+        return
+    elif query.data == "show_ai_modes":
+        ai_keyboard = [
+            [InlineKeyboardButton("🔥 Roast",    callback_data="mode_roast"),
+             InlineKeyboardButton("✍️ Shayari",  callback_data="mode_shayari")],
+            [InlineKeyboardButton("🎤 Rap",      callback_data="mode_rap"),
+             InlineKeyboardButton("🔮 Fortune", callback_data="mode_fortune")],
+            [InlineKeyboardButton("📝 Story",    callback_data="mode_story"),
+             InlineKeyboardButton("🍕 Recipe",   callback_data="mode_recipe")]
+        ]
+        await query.edit_message_text(
+            "🤖 *AI Fun Modes:*\n\nSelect a mode below:",
+            reply_markup=InlineKeyboardMarkup(ai_keyboard),
+            parse_mode="Markdown"
+        )
+        return
 
     if query.data in mode_map:
         mode, prompt_text = mode_map[query.data]
@@ -763,6 +783,18 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def post_init(application: Application):
     setup_instaloader_session()
+    
+    # Set bot commands in the menu
+    commands = [
+        ("start",     "Start the bot"),
+        ("help",      "How to use the bot"),
+        ("search",    "Search YouTube videos"),
+        ("mp4",       "Download video via link"),
+        ("mp3",       "Download audio via link"),
+        ("stats",     "View your download stats"),
+        ("tr",        "Translate to Hindi"),
+    ]
+    await application.bot.set_my_commands(commands)
     
     # FFmpeg check
     ffmpeg_path = shutil.which("ffmpeg")
