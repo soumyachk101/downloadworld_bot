@@ -522,16 +522,19 @@ def progress_hook_factory(loop, bot, chat_id, message_id):
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
 async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
     if not context.args:
-        await update.message.reply_text(
+        await source_msg.reply_text(
             "❌ *Bhai link toh bhej!*\n\nExample: `/mp3 https://youtube.com/watch?v=xxx`",
             parse_mode="Markdown"
         )
         return
 
     url = context.args[0]
-    status_msg = await update.message.reply_text("⏳ *Initializing MP3 request...*", parse_mode="Markdown")
-    download_dir = f"downloads_mp3_{update.effective_user.id}_{update.message.message_id}"
+    status_msg = await source_msg.reply_text("⏳ *Initializing MP3 request...*", parse_mode="Markdown")
+    download_dir = f"downloads_mp3_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
     try:
@@ -549,8 +552,8 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.getsize(file_path) <= 50 * 1024 * 1024:
             await status_msg.edit_text("📤 *Uploading MP3...*", parse_mode="Markdown")
             with open(file_path, 'rb') as audio:
-                await update.message.reply_audio(audio, caption="Enjoy your music! 🎵")
-            track_download(update.effective_user.id)
+                await source_msg.reply_audio(audio, caption="Enjoy your music! 🎵")
+            track_download(user.id)
             await status_msg.delete()
         else:
             await status_msg.edit_text("❌ *Bhai MP3 50MB se badi hai!* 😔", parse_mode="Markdown")
@@ -563,16 +566,19 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
     if not context.args:
-        await update.message.reply_text(
+        await source_msg.reply_text(
             "❌ *Bhai link toh bhej!*\n\nExample: `/mp4 https://youtube.com/watch?v=xxx`",
             parse_mode="Markdown"
         )
         return
 
     url = context.args[0]
-    status_msg = await update.message.reply_text("⏳ *Initializing Video request...*", parse_mode="Markdown")
-    download_dir = f"downloads_mp4_{update.effective_user.id}_{update.message.message_id}"
+    status_msg = await source_msg.reply_text("⏳ *Initializing Video request...*", parse_mode="Markdown")
+    download_dir = f"downloads_mp4_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
     try:
@@ -589,8 +595,8 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if os.path.getsize(file_path) <= 50 * 1024 * 1024:
                 await status_msg.edit_text("📤 *Uploading Video...*", parse_mode="Markdown")
                 with open(file_path, 'rb') as video:
-                    await update.message.reply_video(video, caption="Your video is ready! 🎬")
-                track_download(update.effective_user.id)
+                    await source_msg.reply_video(video, caption="Your video is ready! 🎬")
+                track_download(user.id)
                 await status_msg.delete()
             else:
                 await status_msg.edit_text("❌ *Bhai video 50MB se badi hai!* 😔", parse_mode="Markdown")
