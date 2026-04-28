@@ -359,6 +359,13 @@ def _parse_extractor_args(args_str: str) -> dict:
 def download_video(url: str, output_path: str, audio_only: bool = False, cookies_file: str = None, progress_hook=None) -> str:
     """Blocking yt-dlp download — run via asyncio.to_thread."""
     
+    def get_ffmpeg_path():
+        path = shutil.which('ffmpeg')
+        if path: return path
+        for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+            if os.path.exists(p): return p
+        return None
+
     # Base options
     base_opts = {
         'outtmpl': f'{output_path}/%(id)s.%(ext)s',
@@ -368,6 +375,10 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
         'socket_timeout': 30, # Prevent "uncomplete" downloads
         'retries': 10,
     }
+    
+    ffmpeg_path = get_ffmpeg_path()
+    if ffmpeg_path:
+        base_opts['ffmpeg_location'] = ffmpeg_path
     
     if cookies_file:
         base_opts['cookiefile'] = cookies_file
