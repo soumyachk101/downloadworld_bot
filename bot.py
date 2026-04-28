@@ -347,20 +347,25 @@ async def handle_ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mod
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".m4v", ".mov", ".flv"}
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".webm", ".opus", ".aac", ".wav", ".ogg", ".flac"}
 
-def _pick_largest_media_file(directory: str, audio_only: bool) -> str | None:
+def _find_largest_media_file_in_directory(directory: str, audio_only: bool) -> str | None:
     """Return the largest media file in a directory by file size."""
     if not directory or not os.path.isdir(directory):
         return None
 
     extensions = AUDIO_EXTENSIONS if audio_only else VIDEO_EXTENSIONS
-    candidates = []
-    for ext in extensions:
-        for path in glob.glob(os.path.join(directory, f"*{ext}")):
-            if os.path.isfile(path):
-                candidates.append(path)
-    if not candidates:
-        return None
-    return max(candidates, key=os.path.getsize)
+    largest_path = None
+    largest_size = -1
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if not entry.is_file():
+                continue
+            if os.path.splitext(entry.name)[1].lower() not in extensions:
+                continue
+            size = entry.stat().st_size
+            if size > largest_size:
+                largest_size = size
+                largest_path = entry.path
+    return largest_path
 
 def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> str | None:
     """Resolve the actual downloaded file path from yt-dlp metadata and fallbacks."""
@@ -387,7 +392,7 @@ def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> 
     for path in candidates:
         if path and os.path.exists(path):
             return path
-    return _pick_largest_media_file(output_path, audio_only)
+    return _find_largest_media_file_in_directory(output_path, audio_only)
 
 def _parse_extractor_args(args_str: str) -> dict:
     """Parse YOUTUBE_EXTRACTOR_ARGS into yt-dlp format.
@@ -762,7 +767,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             candidates = glob.glob(f"{base}.*")
             file_path = candidates[0] if candidates else file_path
         if not file_path or not os.path.exists(file_path):
-            file_path = _pick_largest_media_file(download_dir, audio_only=False)
+            file_path = _find_largest_media_file_in_directory(download_dir, audio_only=False)
 
         if file_path and os.path.exists(file_path):
             if os.path.getsize(file_path) <= 50 * 1024 * 1024:
