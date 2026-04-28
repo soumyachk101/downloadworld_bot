@@ -234,7 +234,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📊 *Statistics:*\n"
         "• `/stats`: Check bot usage stats."
     )
-    await update.message.reply_text(help_text, parse_mode="Markdown")
+    await update.effective_message.reply_text(help_text, parse_mode="Markdown")
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stats = load_stats()
@@ -248,7 +248,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👥 *Total Users:* `{users_count}`\n\n"
         f"👤 *Your Downloads:* `{personal}`"
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.effective_message.reply_text(msg, parse_mode="Markdown")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -408,59 +408,57 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
             })
         return opts
 
-    # 1. Try High Quality (Force MP4 merge)
-    ydl_opts = base_opts.copy()
-    if audio_only:
-        ydl_opts['format'] = 'bestaudio/best'
-    else:
-        # Better format string for YouTube high quality
-        ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-        ydl_opts['merge_output_format'] = 'mp4'
-    ydl_opts = add_audio_postprocessor(ydl_opts)
-    
-    if YOUTUBE_EXTRACTOR_ARGS:
-        ydl_opts['extractor_args'] = _parse_extractor_args(YOUTUBE_EXTRACTOR_ARGS)
+    hq_format = 'bestaudio/best' if audio_only else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            return ydl.prepare_filename(info)
-    except Exception as e:
-        print(f"⚠️ HQ failed: {e}. Trying simple format...")
-        
-        # 2. Try Simple 'best' format
-        ydl_opts = base_opts.copy()
-        ydl_opts['format'] = 'best'
-        ydl_opts = add_audio_postprocessor(ydl_opts)
+    def make_opts(fmt, client=None, strip_cookies=False, extra_args=None):
+        opts = base_opts.copy()
+        opts['format'] = fmt
+        if not audio_only:
+            opts['merge_output_format'] = 'mp4'
+        if strip_cookies:
+            opts.pop('cookiefile', None)
+        args = {}
+        if client:
+            args['youtube'] = {'player_client': [client]}
+        if extra_args:
+            for k, v in extra_args.items():
+                args.setdefault(k, {}).update(v)
+        if args:
+            opts['extractor_args'] = args
+        return add_audio_postprocessor(opts)
+
+    tiers = [
+        # 1. HQ + cookies + user extractor args
+        (lambda: {**make_opts(hq_format),
+                  **(({'extractor_args': _parse_extractor_args(YOUTUBE_EXTRACTOR_ARGS)}
+                      if YOUTUBE_EXTRACTOR_ARGS else {}))},
+         "HQ+cookies+extractor_args"),
+        # 2. Android client + cookies — bypasses bot detection
+        (lambda: make_opts(hq_format, client='android'),
+         "HQ+android_client"),
+        # 3. iOS client + cookies — second bypass
+        (lambda: make_opts('bestaudio/best' if audio_only else 'best', client='ios'),
+         "best+ios_client"),
+        # 4. TV embedded client + no cookies — very permissive
+        (lambda: make_opts('best', client='tv_embedded', strip_cookies=True),
+         "best+tv_embedded+no_cookies"),
+        # 5. Last resort: android, no cookies, worst-acceptable format
+        (lambda: make_opts('b', client='android', strip_cookies=True),
+         "fallback+android+no_cookies"),
+    ]
+
+    last_err = None
+    for opts_fn, label in tiers:
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            opts = opts_fn()
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 return ydl.prepare_filename(info)
-        except Exception as e2:
-            print(f"⚠️ Simple failed: {e2}. Trying absolute fallback...")
-            
-            # 3. Try: No restrictions, no extractor args
-            ydl_opts = base_opts.copy()
-            ydl_opts['format'] = 'b' # single best file
-            ydl_opts = add_audio_postprocessor(ydl_opts)
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    return ydl.prepare_filename(info)
-            except Exception as e3:
-                print(f"⚠️ Fallback failed: {e3}. FINAL attempt without cookies...")
-                
-                # 4. FINAL attempt: No cookies, no restrictions
-                ydl_opts = base_opts.copy()
-                ydl_opts.pop('cookiefile', None) # STRIP COOKIES
-                ydl_opts['format'] = 'best'
-                ydl_opts = add_audio_postprocessor(ydl_opts)
-                try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(url, download=True)
-                        return ydl.prepare_filename(info)
-                except Exception as e4:
-                    raise RuntimeError(f"All 4 download tiers failed. Last error: {e4}")
+        except Exception as e:
+            print(f"⚠️ Tier [{label}] failed: {e}")
+            last_err = e
+
+    raise RuntimeError(f"All download tiers failed. Last error: {last_err}")
 
 
 def download_instagram(url: str, output_path: str):
@@ -798,7 +796,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     url = context.user_data.get("current_url")
     if not url:
-        await query.edit_message_text("❌ *Error:* Link not found in memory. Please send the link again.")
+        await query.edit_message_text("❌ *Error:* Link not found in memory. Please send the link again.", parse_mode="Markdown")
         return
 
     data = query.data
