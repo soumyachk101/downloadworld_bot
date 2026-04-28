@@ -383,6 +383,9 @@ def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> 
     candidates = []
     seen = set()
 
+    if output_path and not os.path.isdir(output_path):
+        output_path = None
+
     def add_candidate(path: str | None):
         if path and path not in seen:
             seen.add(path)
@@ -475,20 +478,20 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
             })
         return opts
 
-    supports_merge = bool(ffmpeg_path)
+    ffmpeg_available = bool(ffmpeg_path)
     if audio_only:
         hq_format = 'bestaudio/best'
     else:
         hq_format = (
             'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-            if supports_merge
+            if ffmpeg_available
             else 'best[ext=mp4]/best'
         )
 
     def make_opts(fmt, client=None, strip_cookies=False, extra_args=None):
         opts = base_opts.copy()
         opts['format'] = fmt
-        if not audio_only and supports_merge:
+        if not audio_only and ffmpeg_available:
             opts['merge_output_format'] = 'mp4'
         if strip_cookies:
             opts.pop('cookiefile', None)
