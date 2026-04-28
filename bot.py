@@ -664,13 +664,14 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             title = entry.get('title', 'Video')
             duration = entry.get('duration_string', 'N/A')
             
-            # Store URL in user_data
-            context.user_data["current_url"] = url
+            import uuid
+            link_id = str(uuid.uuid4())[:8]
+            context.user_data.setdefault("links", {})[link_id] = url
 
             keyboard = [
                 [
-                    InlineKeyboardButton("🎬 Video (MP4)", callback_data="dl_mp4"),
-                    InlineKeyboardButton("🎵 Audio (MP3)", callback_data="dl_mp3")
+                    InlineKeyboardButton("🎬 Video (MP4)", callback_data=f"dl_mp4:{link_id}"),
+                    InlineKeyboardButton("🎵 Audio (MP3)", callback_data=f"dl_mp3:{link_id}")
                 ]
             ]
             await status_msg.edit_text(
@@ -775,13 +776,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = urls[0]
-    # Store URL in user_data to avoid Telegram's 64-character button limit
-    context.user_data["current_url"] = url
+    import uuid
+    link_id = str(uuid.uuid4())[:8]
+    context.user_data.setdefault("links", {})[link_id] = url
     
     keyboard = [
         [
-            InlineKeyboardButton("🎬 Video (MP4)", callback_data="dl_mp4"),
-            InlineKeyboardButton("🎵 Audio (MP3)", callback_data="dl_mp3")
+            InlineKeyboardButton("🎬 Video (MP4)", callback_data=f"dl_mp4:{link_id}"),
+            InlineKeyboardButton("🎵 Audio (MP3)", callback_data=f"dl_mp3:{link_id}")
         ]
     ]
     await update.message.reply_text(
@@ -794,17 +796,25 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    url = context.user_data.get("current_url")
+    data = query.data
+    url = None
+    
+    if ":" in data:
+        action, link_id = data.split(":", 1)
+        url = context.user_data.get("links", {}).get(link_id)
+    else:
+        url = context.user_data.get("current_url")
+        action = data
+
     if not url:
         await query.edit_message_text("❌ *Error:* Link not found in memory. Please send the link again.", parse_mode="Markdown")
         return
 
-    data = query.data
     context.args = [url]
     
-    if data == "dl_mp4":
+    if action == "dl_mp4":
         await mp4_command(update, context)
-    elif data == "dl_mp3":
+    elif action == "dl_mp3":
         await mp3_command(update, context)
 
 
@@ -849,6 +859,12 @@ async def post_init(application: Application):
 
 
 def main():
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     if not BOT_TOKEN:
         print("❌ BOT_TOKEN missing! Add it to environment variables.")
         return
