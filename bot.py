@@ -264,7 +264,7 @@ def _is_expired_callback_query_error(error: Exception) -> bool:
 async def _safe_answer_callback(update: Update) -> bool:
     query = update.callback_query
     if not query:
-        print("⚠️ Callback query missing; unable to answer.")
+        print("⚠️ Callback query missing in callback handler; skipping response.")
         return False
     try:
         await query.answer()
@@ -1017,7 +1017,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"❌ Exception while handling an update: {context.error}")
     if _is_expired_callback_query_error(context.error):
-        print("ℹ️ Ignoring expired callback query error.")
+        print(f"ℹ️ Ignoring expired callback query error for update: {update}")
         return
     if isinstance(update, Update) and update.effective_message:
         await update.effective_message.reply_text(
