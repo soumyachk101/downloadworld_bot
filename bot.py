@@ -574,8 +574,9 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loop = asyncio.get_running_loop()
         hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
         
+        file_path = None
         try:
-            await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
+            file_path = await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
         except Exception as e:
             if "instagram.com" in url:
                 print(f"yt-dlp failed for Instagram. Trying Instaloader fallback for MP3. Error: {e}")
@@ -596,6 +597,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     import subprocess
                     cmd = [ffmpeg_path, '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
                     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    file_path = mp3_path
                 else:
                     raise RuntimeError("Instaloader failed to find downloaded video for MP3 extraction.")
             else:
@@ -604,8 +606,39 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # yt-dlp converts to .mp3 after postprocessing — glob for it
         mp3_files = glob.glob(f"{download_dir}/*.mp3")
         if not mp3_files:
-            await status_msg.edit_text("❌ *Bhai MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
-            return
+            ffmpeg_missing = False
+            audio_candidates = []
+            if file_path and os.path.exists(file_path):
+                audio_candidates.append(file_path)
+            for candidate in glob.glob(f"{download_dir}/*"):
+                if os.path.splitext(candidate)[1].lower() in {".m4a", ".webm", ".opus", ".aac", ".mp4", ".mkv", ".wav"}:
+                    audio_candidates.append(candidate)
+
+            seen = set()
+            audio_candidates = [c for c in audio_candidates if not (c in seen or seen.add(c))]
+            if audio_candidates:
+                source_audio = audio_candidates[0]
+                mp3_path = os.path.splitext(source_audio)[0] + ".mp3"
+                if not os.path.exists(mp3_path):
+                    ffmpeg_path = shutil.which('ffmpeg')
+                    if not ffmpeg_path:
+                        for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                            if os.path.exists(p): ffmpeg_path = p; break
+                    if ffmpeg_path:
+                        import subprocess
+                        cmd = [ffmpeg_path, '-y', '-i', source_audio, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
+                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    else:
+                        ffmpeg_missing = True
+                if os.path.exists(mp3_path):
+                    mp3_files = [mp3_path]
+
+            if not mp3_files:
+                if ffmpeg_missing:
+                    await status_msg.edit_text("❌ *Bhai MP3 convert nahi ho rahi — FFmpeg nahi mila.* 😔", parse_mode="Markdown")
+                else:
+                    await status_msg.edit_text("❌ *Bhai MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
+                return
 
         file_path = mp3_files[0]
         if os.path.getsize(file_path) <= 50 * 1024 * 1024:
