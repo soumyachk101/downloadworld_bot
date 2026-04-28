@@ -835,7 +835,7 @@ async def post_init(application: Application):
     print("✅ Bot ready — scheduler started, instaloader configured.")
 
 
-async def main_async():
+def main():
     if not BOT_TOKEN:
         print("❌ BOT_TOKEN missing! Add it to environment variables.")
         return
@@ -864,21 +864,7 @@ async def main_async():
     app.add_error_handler(error_handler)
 
     print("🤖 Bot is starting up... waiting for messages.")
-    
-    async with app:
-        await app.initialize()
-        await app.start()
-        await app.updater.start_polling()
-        # Run until the program is stopped
-        await asyncio.Event().wait()
-
-
-def main():
-    try:
-        asyncio.run(main_async())
-    except KeyboardInterrupt:
-        pass
-
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
