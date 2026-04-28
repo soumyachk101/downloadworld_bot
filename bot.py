@@ -101,15 +101,30 @@ def setup_instaloader_session():
         try:
             import http.cookiejar
             import traceback
+            import json
             from requests.cookies import RequestsCookieJar
             jar = RequestsCookieJar()
-            ncjar = http.cookiejar.MozillaCookieJar(INSTAGRAM_COOKIES_FILE)
-            ncjar.load(ignore_discard=True, ignore_expires=True)
-            # Convert to RequestsCookieJar
-            for cookie in ncjar:
-                jar.set(cookie.name, cookie.value, domain=cookie.domain,
-                        path=cookie.path, secure=cookie.secure)
-            # Check if sessionid cookie is present
+
+            with open(INSTAGRAM_COOKIES_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+
+            if content.startswith('['):
+                cookies_data = json.loads(content)
+                for c in cookies_data:
+                    name = c.get('name')
+                    value = c.get('value')
+                    if name and value:
+                        domain = c.get('domain', '.instagram.com')
+                        path = c.get('path', '/')
+                        secure = c.get('secure', True)
+                        jar.set(name, value, domain=domain, path=path, secure=secure)
+            else:
+                ncjar = http.cookiejar.MozillaCookieJar(INSTAGRAM_COOKIES_FILE)
+                ncjar.load(ignore_discard=True, ignore_expires=True)
+                for cookie in ncjar:
+                    jar.set(cookie.name, cookie.value, domain=cookie.domain,
+                            path=cookie.path, secure=cookie.secure)
+
             has_session = "sessionid" in set(jar.keys())
             if has_session:
                 L.context._session.cookies = jar
