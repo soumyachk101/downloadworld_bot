@@ -347,20 +347,23 @@ async def handle_ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mod
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".m4v", ".mov", ".flv"}
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".webm", ".opus", ".aac", ".wav", ".ogg", ".flac"}
 
-def _pick_largest_media_file_by_size(directory: str, audio_only: bool) -> str | None:
+def _pick_largest_media_file(directory: str, audio_only: bool) -> str | None:
+    """Return the largest media file in a directory by file size."""
     if not directory or not os.path.isdir(directory):
         return None
 
     extensions = AUDIO_EXTENSIONS if audio_only else VIDEO_EXTENSIONS
     candidates = []
-    for path in glob.glob(os.path.join(directory, "*")):
-        if os.path.isfile(path) and os.path.splitext(path)[1].lower() in extensions:
-            candidates.append(path)
+    for ext in extensions:
+        for path in glob.glob(os.path.join(directory, f"*{ext}")):
+            if os.path.isfile(path):
+                candidates.append(path)
     if not candidates:
         return None
     return max(candidates, key=os.path.getsize)
 
 def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> str | None:
+    """Resolve the actual downloaded file path from yt-dlp metadata and fallbacks."""
     candidates = []
     seen = set()
 
@@ -377,13 +380,14 @@ def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> 
             add_candidate(req.get("filename"))
         info_id = info.get("id")
         if info_id and output_path:
-            for match in glob.glob(os.path.join(output_path, f"{info_id}.*")):
+            escaped_id = glob.escape(info_id)
+            for match in glob.glob(os.path.join(output_path, f"{escaped_id}.*")):
                 add_candidate(match)
 
     for path in candidates:
         if path and os.path.exists(path):
             return path
-    return _pick_largest_media_file_by_size(output_path, audio_only)
+    return _pick_largest_media_file(output_path, audio_only)
 
 def _parse_extractor_args(args_str: str) -> dict:
     """Parse YOUTUBE_EXTRACTOR_ARGS into yt-dlp format.
@@ -758,7 +762,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             candidates = glob.glob(f"{base}.*")
             file_path = candidates[0] if candidates else file_path
         if not file_path or not os.path.exists(file_path):
-            file_path = _pick_largest_media_file_by_size(download_dir, audio_only=False)
+            file_path = _pick_largest_media_file(download_dir, audio_only=False)
 
         if file_path and os.path.exists(file_path):
             if os.path.getsize(file_path) <= 50 * 1024 * 1024:
