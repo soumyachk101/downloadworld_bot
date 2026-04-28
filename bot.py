@@ -589,7 +589,9 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ffmpeg_path = shutil.which('ffmpeg')
                     if not ffmpeg_path:
                         for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
-                            if os.path.exists(p): ffmpeg_path = p; break
+                            if os.path.exists(p):
+                                ffmpeg_path = p
+                                break
                     
                     if not ffmpeg_path:
                         raise RuntimeError("FFmpeg not found! Cannot extract audio from Instagram video.")
@@ -614,8 +616,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if os.path.splitext(candidate)[1].lower() in {".m4a", ".webm", ".opus", ".aac", ".mp4", ".mkv", ".wav"}:
                     audio_candidates.append(candidate)
 
-            seen = set()
-            audio_candidates = [c for c in audio_candidates if not (c in seen or seen.add(c))]
+            audio_candidates = list(dict.fromkeys(audio_candidates))
             if audio_candidates:
                 source_audio = audio_candidates[0]
                 mp3_path = os.path.splitext(source_audio)[0] + ".mp3"
