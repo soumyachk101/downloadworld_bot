@@ -251,7 +251,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.effective_message.reply_text(msg, parse_mode="Markdown")
 
-def _is_expired_callback_query_error(error: Exception) -> bool:
+def _is_expired_callback_query_error(error: object) -> bool:
     if not isinstance(error, BadRequest):
         return False
     message = getattr(error, "message", str(error)).lower()
