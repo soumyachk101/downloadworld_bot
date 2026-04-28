@@ -396,11 +396,15 @@ def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> 
             add_candidate(req.get("filename"))
         info_id = info.get("id")
         if info_id and output_path:
-            escaped_id = glob.escape(info_id)
             extensions = _AUDIO_EXTENSIONS if audio_only else _VIDEO_EXTENSIONS
-            for match in glob.glob(os.path.join(output_path, f"{escaped_id}.*")):
-                if os.path.splitext(match)[1].lower() in extensions:
-                    add_candidate(match)
+            with os.scandir(output_path) as entries:
+                for entry in entries:
+                    if not entry.is_file():
+                        continue
+                    if not entry.name.startswith(f"{info_id}."):
+                        continue
+                    if os.path.splitext(entry.name)[1].lower() in extensions:
+                        add_candidate(entry.path)
 
     for path in candidates:
         if path and os.path.exists(path):
@@ -775,10 +779,6 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 raise e
 
-        if file_path and not os.path.exists(file_path):
-            base = os.path.splitext(file_path)[0]
-            candidates = glob.glob(f"{base}.*")
-            file_path = candidates[0] if candidates else file_path
         if not file_path or not os.path.exists(file_path):
             file_path = _find_largest_video_file(download_dir)
 
