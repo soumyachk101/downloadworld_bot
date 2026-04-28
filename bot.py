@@ -11,7 +11,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from telegram.error import BadRequest
 from telegram.ext import (
     Application,
@@ -261,7 +261,7 @@ def _is_expired_callback_query_error(error: Exception) -> bool:
         or "query id is invalid" in message
     )
 
-async def _safe_answer_callback(update: Update, query) -> bool:
+async def _safe_answer_callback(update: Update, query: CallbackQuery) -> bool:
     try:
         await query.answer()
         return True
@@ -1012,7 +1012,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"❌ Exception while handling an update: {context.error}")
-    if _is_expired_callback_query_error(context.error):
+    if context.error and _is_expired_callback_query_error(context.error):
         print("ℹ️ Ignoring expired callback query error.")
         return
     if isinstance(update, Update) and update.effective_message:
