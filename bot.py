@@ -264,6 +264,7 @@ def _is_expired_callback_query_error(error: Exception) -> bool:
 async def _safe_answer_callback(update: Update) -> bool:
     query = update.callback_query
     if not query:
+        print("⚠️ Callback query missing; unable to answer.")
         return False
     try:
         await query.answer()
@@ -272,7 +273,7 @@ async def _safe_answer_callback(update: Update) -> bool:
         if _is_expired_callback_query_error(e):
             if update.effective_message:
                 await update.effective_message.reply_text(
-                    "⚠️ Button expired ho gaya. Link dobara bhejo phir se try karo. 🙏"
+                    "⚠️ Button expired ho gaya. Link dobara bhejo fir se try karo. 🙏"
                 )
             return False
         raise
@@ -1015,7 +1016,7 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"❌ Exception while handling an update: {context.error}")
-    if context.error and _is_expired_callback_query_error(context.error):
+    if _is_expired_callback_query_error(context.error):
         print("ℹ️ Ignoring expired callback query error.")
         return
     if isinstance(update, Update) and update.effective_message:
