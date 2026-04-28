@@ -573,7 +573,33 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         loop = asyncio.get_running_loop()
         hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
-        await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
+        
+        try:
+            await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
+        except Exception as e:
+            if "instagram.com" in url:
+                print(f"yt-dlp failed for Instagram. Trying Instaloader fallback for MP3. Error: {e}")
+                await asyncio.to_thread(download_instagram, url, download_dir)
+                mp4_files = glob.glob(f"{download_dir}/*.mp4")
+                if mp4_files:
+                    video_path = mp4_files[0]
+                    mp3_path = os.path.splitext(video_path)[0] + ".mp3"
+                    
+                    ffmpeg_path = shutil.which('ffmpeg')
+                    if not ffmpeg_path:
+                        for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                            if os.path.exists(p): ffmpeg_path = p; break
+                    
+                    if not ffmpeg_path:
+                        raise RuntimeError("FFmpeg not found! Cannot extract audio from Instagram video.")
+                    
+                    import subprocess
+                    cmd = [ffmpeg_path, '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
+                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    raise RuntimeError("Instaloader failed to find downloaded video for MP3 extraction.")
+            else:
+                raise e
 
         # yt-dlp converts to .mp3 after postprocessing — glob for it
         mp3_files = glob.glob(f"{download_dir}/*.mp3")
@@ -617,7 +643,21 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         loop = asyncio.get_running_loop()
         hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
-        file_path = await asyncio.to_thread(download_video, url, download_dir, False, YOUTUBE_COOKIES_FILE, hook)
+        
+        file_path = None
+        try:
+            file_path = await asyncio.to_thread(download_video, url, download_dir, False, YOUTUBE_COOKIES_FILE, hook)
+        except Exception as e:
+            if "instagram.com" in url:
+                print(f"yt-dlp failed for Instagram. Trying Instaloader fallback. Error: {e}")
+                await asyncio.to_thread(download_instagram, url, download_dir)
+                mp4_files = glob.glob(f"{download_dir}/*.mp4")
+                if mp4_files:
+                    file_path = mp4_files[0]
+                else:
+                    raise RuntimeError("Instaloader failed to find downloaded MP4.")
+            else:
+                raise e
 
         if not os.path.exists(file_path):
             base = os.path.splitext(file_path)[0]
