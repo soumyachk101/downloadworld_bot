@@ -254,7 +254,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def _is_expired_callback_query_error(error: Exception) -> bool:
     if not isinstance(error, BadRequest):
         return False
-    message = str(error).lower()
+    message = getattr(error, "message", str(error)).lower()
     return (
         "query is too old" in message
         or "response timeout expired" in message
@@ -269,7 +269,7 @@ async def _safe_answer_callback(update: Update, query) -> bool:
         if _is_expired_callback_query_error(e):
             if update.effective_message:
                 await update.effective_message.reply_text(
-                    "⚠️ Button expire ho gaya. Link dobara bhejo phir se try karo. 🙏"
+                    "⚠️ Button expired ho gaya. Link dobara bhejo phir se try karo. 🙏"
                 )
             return False
         raise
