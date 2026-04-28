@@ -377,8 +377,8 @@ def _find_largest_audio_file(directory: str) -> str | None:
 def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> str | None:
     """Resolve the downloaded file path using yt-dlp metadata and directory fallbacks.
 
-    Expected info keys: filepath/_filename (string), requested_downloads (list of dicts
-    with filepath/filename), and id (string) from yt-dlp extract_info.
+    Expected info keys: filepath and _filename (strings, optional), requested_downloads
+    (list of dicts with filepath/filename), and id (string) from yt-dlp extract_info.
     """
     candidates = []
     seen = set()
@@ -412,7 +412,10 @@ def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> 
     for path in candidates:
         if path and os.path.exists(path):
             return path
-    return _find_largest_audio_file(output_path) if audio_only else _find_largest_video_file(output_path)
+    fallback = _find_largest_audio_file(output_path) if audio_only else _find_largest_video_file(output_path)
+    if not fallback:
+        print("⚠️ Could not resolve downloaded file path from yt-dlp metadata.")
+    return fallback
 
 def _parse_extractor_args(args_str: str) -> dict:
     """Parse YOUTUBE_EXTRACTOR_ARGS into yt-dlp format.
