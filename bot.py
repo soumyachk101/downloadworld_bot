@@ -372,19 +372,25 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
     if cookies_file:
         base_opts['cookiefile'] = cookies_file
 
+    def add_audio_postprocessor(opts):
+        if audio_only:
+            opts.setdefault('postprocessors', [])
+            opts['postprocessors'].append({
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            })
+        return opts
+
     # 1. Try High Quality (Force MP4 merge)
     ydl_opts = base_opts.copy()
     if audio_only:
         ydl_opts['format'] = 'bestaudio/best'
-        ydl_opts['postprocessors'] = [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }]
     else:
         # Better format string for YouTube high quality
         ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
         ydl_opts['merge_output_format'] = 'mp4'
+    ydl_opts = add_audio_postprocessor(ydl_opts)
     
     if YOUTUBE_EXTRACTOR_ARGS:
         ydl_opts['extractor_args'] = _parse_extractor_args(YOUTUBE_EXTRACTOR_ARGS)
@@ -399,6 +405,7 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
         # 2. Try Simple 'best' format
         ydl_opts = base_opts.copy()
         ydl_opts['format'] = 'best'
+        ydl_opts = add_audio_postprocessor(ydl_opts)
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -409,6 +416,7 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
             # 3. Try: No restrictions, no extractor args
             ydl_opts = base_opts.copy()
             ydl_opts['format'] = 'b' # single best file
+            ydl_opts = add_audio_postprocessor(ydl_opts)
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
@@ -420,6 +428,7 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
                 ydl_opts = base_opts.copy()
                 ydl_opts.pop('cookiefile', None) # STRIP COOKIES
                 ydl_opts['format'] = 'best'
+                ydl_opts = add_audio_postprocessor(ydl_opts)
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(url, download=True)
