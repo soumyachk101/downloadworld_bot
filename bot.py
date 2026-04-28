@@ -344,6 +344,48 @@ async def handle_ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mod
 
 # ─── Downloads ───────────────────────────────────────────────────────────────
 
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".m4v", ".mov", ".flv"}
+AUDIO_EXTENSIONS = {".mp3", ".m4a", ".webm", ".opus", ".aac", ".wav", ".ogg", ".flac"}
+
+def _pick_largest_media_file(directory: str, audio_only: bool) -> str | None:
+    if not directory or not os.path.isdir(directory):
+        return None
+
+    extensions = AUDIO_EXTENSIONS if audio_only else VIDEO_EXTENSIONS
+    candidates = []
+    for path in glob.glob(os.path.join(directory, "*")):
+        if os.path.isfile(path) and os.path.splitext(path)[1].lower() in extensions:
+            candidates.append(path)
+    if not candidates:
+        return None
+    return max(candidates, key=os.path.getsize)
+
+def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> str | None:
+    candidates = []
+
+    def add_candidate(path: str | None):
+        if path and path not in candidates:
+            candidates.append(path)
+
+    if isinstance(info, dict):
+        add_candidate(info.get("filepath"))
+        add_candidate(info.get("_filename"))
+        for req in info.get("requested_downloads") or []:
+            add_candidate(req.get("filepath"))
+            add_candidate(req.get("filename"))
+        info_id = info.get("id")
+        info_ext = info.get("ext")
+        if info_id and info_ext and output_path:
+            add_candidate(os.path.join(output_path, f"{info_id}.{info_ext}"))
+        if info_id and output_path:
+            for match in glob.glob(os.path.join(output_path, f"{info_id}.*")):
+                add_candidate(match)
+
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return _pick_largest_media_file(output_path, audio_only)
+
 def _parse_extractor_args(args_str: str) -> dict:
     """Parse YOUTUBE_EXTRACTOR_ARGS into yt-dlp format.
 
@@ -408,12 +450,20 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
             })
         return opts
 
-    hq_format = 'bestaudio/best' if audio_only else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+    supports_merge = bool(ffmpeg_path)
+    if audio_only:
+        hq_format = 'bestaudio/best'
+    else:
+        hq_format = (
+            'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+            if supports_merge
+            else 'best[ext=mp4]/best'
+        )
 
     def make_opts(fmt, client=None, strip_cookies=False, extra_args=None):
         opts = base_opts.copy()
         opts['format'] = fmt
-        if not audio_only:
+        if not audio_only and supports_merge:
             opts['merge_output_format'] = 'mp4'
         if strip_cookies:
             opts.pop('cookiefile', None)
@@ -453,7 +503,8 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
             opts = opts_fn()
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-                return ydl.prepare_filename(info)
+                resolved_path = _resolve_downloaded_path(info, output_path, audio_only)
+                return resolved_path or ydl.prepare_filename(info)
         except Exception as e:
             print(f"⚠️ Tier [{label}] failed: {e}")
             last_err = e
@@ -703,10 +754,12 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 raise e
 
-        if not os.path.exists(file_path):
+        if file_path and not os.path.exists(file_path):
             base = os.path.splitext(file_path)[0]
             candidates = glob.glob(f"{base}.*")
             file_path = candidates[0] if candidates else file_path
+        if not file_path or not os.path.exists(file_path):
+            file_path = _pick_largest_media_file(download_dir, audio_only=False)
 
         if file_path and os.path.exists(file_path):
             if os.path.getsize(file_path) <= 50 * 1024 * 1024:
