@@ -11,7 +11,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
 from telegram.ext import (
     Application,
@@ -261,7 +261,10 @@ def _is_expired_callback_query_error(error: Exception) -> bool:
         or "query id is invalid" in message
     )
 
-async def _safe_answer_callback(update: Update, query: CallbackQuery) -> bool:
+async def _safe_answer_callback(update: Update) -> bool:
+    query = update.callback_query
+    if not query:
+        return False
     try:
         await query.answer()
         return True
@@ -275,9 +278,9 @@ async def _safe_answer_callback(update: Update, query: CallbackQuery) -> bool:
         raise
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if not await _safe_answer_callback(update, query):
+    if not await _safe_answer_callback(update):
         return
+    query = update.callback_query
 
     mode_map = {
         "mode_roast":   ("roast",   "Naam bata jisko roast karna hai! 🔥"),
@@ -982,9 +985,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if not await _safe_answer_callback(update, query):
+    if not await _safe_answer_callback(update):
         return
+    query = update.callback_query
     
     data = query.data
     url = None
