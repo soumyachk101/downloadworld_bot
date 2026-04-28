@@ -616,7 +616,13 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if os.path.splitext(candidate)[1].lower() in {".m4a", ".webm", ".opus", ".aac", ".mp4", ".mkv", ".wav"}:
                     audio_candidates.append(candidate)
 
-            audio_candidates = list(dict.fromkeys(audio_candidates))
+            unique_candidates = []
+            seen = set()
+            for candidate in audio_candidates:
+                if candidate not in seen:
+                    seen.add(candidate)
+                    unique_candidates.append(candidate)
+            audio_candidates = unique_candidates
             if audio_candidates:
                 source_audio = audio_candidates[0]
                 mp3_path = os.path.splitext(source_audio)[0] + ".mp3"
@@ -628,7 +634,11 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if ffmpeg_path:
                         import subprocess
                         cmd = [ffmpeg_path, '-y', '-i', source_audio, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
-                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        try:
+                            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                        except subprocess.CalledProcessError as exc:
+                            err = exc.stderr.decode(errors="ignore").strip() if exc.stderr else "Unknown error"
+                            raise RuntimeError(f"FFmpeg conversion failed: {err}") from exc
                     else:
                         ffmpeg_missing = True
                 if os.path.exists(mp3_path):
