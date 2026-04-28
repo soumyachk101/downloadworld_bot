@@ -12,6 +12,7 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding='utf-8')
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -250,9 +251,33 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.effective_message.reply_text(msg, parse_mode="Markdown")
 
+def _is_expired_callback_query_error(error: Exception) -> bool:
+    if not isinstance(error, BadRequest):
+        return False
+    message = str(error).lower()
+    return (
+        "query is too old" in message
+        or "response timeout expired" in message
+        or "query id is invalid" in message
+    )
+
+async def _safe_answer_callback(update: Update, query) -> bool:
+    try:
+        await query.answer()
+        return True
+    except BadRequest as e:
+        if _is_expired_callback_query_error(e):
+            if update.effective_message:
+                await update.effective_message.reply_text(
+                    "⚠️ Button expire ho gaya. Link dobara bhejo phir se try karo. 🙏"
+                )
+            return False
+        raise
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    if not await _safe_answer_callback(update, query):
+        return
 
     mode_map = {
         "mode_roast":   ("roast",   "Naam bata jisko roast karna hai! 🔥"),
@@ -958,7 +983,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    if not await _safe_answer_callback(update, query):
+        return
     
     data = query.data
     url = None
@@ -986,6 +1012,9 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"❌ Exception while handling an update: {context.error}")
+    if _is_expired_callback_query_error(context.error):
+        print("ℹ️ Ignoring expired callback query error.")
+        return
     if isinstance(update, Update) and update.effective_message:
         await update.effective_message.reply_text(
             f"⚠️ *Bhai thoda error aagaya:* `{context.error}`",
