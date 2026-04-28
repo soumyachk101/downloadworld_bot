@@ -927,7 +927,7 @@ def main():
     app.add_handler(CommandHandler("translate", translate_command))
     app.add_handler(CommandHandler("tr",        translate_command))
     app.add_handler(CommandHandler("remind",    remind_command))
-    app.add_handler(CallbackQueryHandler(button_callback, pattern="^mode_"))
+    app.add_handler(CallbackQueryHandler(button_callback, pattern="^(mode_|show_)"))
     app.add_handler(CallbackQueryHandler(dl_callback,     pattern="^dl_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(error_handler)
