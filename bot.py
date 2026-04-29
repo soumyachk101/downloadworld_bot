@@ -558,8 +558,18 @@ def _ensure_netscape_cookies(path: str | None, default_domain: str = ".instagram
     except Exception:
         return path
 
-    if default_domain and not default_domain.startswith('.'):
-        default_domain = f".{default_domain}"
+    normalized_default_domain = default_domain
+    if normalized_default_domain and not normalized_default_domain.startswith('.'):
+        normalized_default_domain = f".{normalized_default_domain}"
+
+    def normalize_domain(domain_value: str | None) -> str:
+        if not domain_value:
+            domain_value = normalized_default_domain or ""
+        if not domain_value:
+            return ""
+        if not domain_value.startswith('.') and not domain_value.startswith('www'):
+            domain_value = f".{domain_value}"
+        return domain_value
 
     netscape_path = path + ".netscape"
     lines = ["# Netscape HTTP Cookie File", "# Auto-generated from JSON cookies", ""]
@@ -568,11 +578,7 @@ def _ensure_netscape_cookies(path: str | None, default_domain: str = ".instagram
         value = c.get('value')
         if not name or value is None:
             continue
-        domain = c.get('domain')
-        if not domain:
-            domain = default_domain
-        elif not domain.startswith('.') and not domain.startswith('www'):
-            domain = f".{domain}"
+        domain = normalize_domain(c.get('domain'))
         include_subdomains = "TRUE" if domain.startswith('.') else "FALSE"
         cookie_path = c.get('path', '/')
         secure = "TRUE" if c.get('secure', True) else "FALSE"
