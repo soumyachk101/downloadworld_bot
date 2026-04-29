@@ -12,6 +12,7 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding='utf-8')
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -250,9 +251,37 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.effective_message.reply_text(msg, parse_mode="Markdown")
 
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def _is_expired_callback_query_error(error: object) -> bool:
+    if not isinstance(error, BadRequest):
+        return False
+    message = getattr(error, "message", str(error)).lower()
+    return (
+        "query is too old" in message
+        or "response timeout expired" in message
+        or "query id is invalid" in message
+    )
+
+async def _safe_answer_callback(update: Update) -> bool:
     query = update.callback_query
-    await query.answer()
+    if not query:
+        print("⚠️ Callback query missing in callback handler; skipping response.")
+        return False
+    try:
+        await query.answer()
+        return True
+    except BadRequest as e:
+        if _is_expired_callback_query_error(e):
+            if update.effective_message:
+                await update.effective_message.reply_text(
+                    "⚠️ Button expired ho gaya. Link dobara bhejo fir se try karo. 🙏"
+                )
+            return False
+        raise
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _safe_answer_callback(update):
+        return
+    query = update.callback_query
 
     mode_map = {
         "mode_roast":   ("roast",   "Naam bata jisko roast karna hai! 🔥"),
@@ -344,6 +373,79 @@ async def handle_ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mod
 
 # ─── Downloads ───────────────────────────────────────────────────────────────
 
+_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".m4v", ".mov", ".flv"}
+_AUDIO_EXTENSIONS = {".mp3", ".m4a", ".webm", ".opus", ".aac", ".wav", ".ogg", ".flac"}
+
+def _find_largest_media_file(directory: str, extensions: set[str]) -> str | None:
+    """Return the largest file in a directory that matches the given extensions."""
+    if not directory or not os.path.isdir(directory):
+        return None
+
+    largest_path = None
+    largest_size = -1
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if not entry.is_file():
+                continue
+            if os.path.splitext(entry.name)[1].lower() not in extensions:
+                continue
+            size = entry.stat().st_size
+            if size > largest_size:
+                largest_size = size
+                largest_path = entry.path
+    return largest_path
+
+def _find_largest_video_file(directory: str) -> str | None:
+    """Return the largest video file in a directory by file size."""
+    return _find_largest_media_file(directory, _VIDEO_EXTENSIONS)
+
+def _find_largest_audio_file(directory: str) -> str | None:
+    """Return the largest audio file in a directory by file size."""
+    return _find_largest_media_file(directory, _AUDIO_EXTENSIONS)
+
+def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> str | None:
+    """Resolve the downloaded file path using yt-dlp metadata and directory fallbacks.
+
+    Expected info keys: filepath and _filename (strings, optional), requested_downloads
+    (list of dicts with filepath/filename), and id (string) from yt-dlp extract_info.
+    """
+    candidates = []
+    seen = set()
+
+    if output_path and not os.path.isdir(output_path):
+        output_path = None
+
+    def add_candidate(path: str | None):
+        if path and path not in seen:
+            seen.add(path)
+            candidates.append(path)
+
+    if isinstance(info, dict):
+        add_candidate(info.get("filepath"))
+        add_candidate(info.get("_filename"))
+        for req in info.get("requested_downloads") or []:
+            add_candidate(req.get("filepath"))
+            add_candidate(req.get("filename"))
+        info_id = info.get("id")
+        if info_id and output_path:
+            extensions = _AUDIO_EXTENSIONS if audio_only else _VIDEO_EXTENSIONS
+            with os.scandir(output_path) as entries:
+                for entry in entries:
+                    if not entry.is_file():
+                        continue
+                    if not entry.name.startswith(f"{info_id}."):
+                        continue
+                    if os.path.splitext(entry.name)[1].lower() in extensions:
+                        add_candidate(entry.path)
+
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    fallback = _find_largest_audio_file(output_path) if audio_only else _find_largest_video_file(output_path)
+    if not fallback:
+        print("⚠️ Could not resolve downloaded file path from yt-dlp metadata.")
+    return fallback
+
 def _parse_extractor_args(args_str: str) -> dict:
     """Parse YOUTUBE_EXTRACTOR_ARGS into yt-dlp format.
 
@@ -398,8 +500,13 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
     if cookies_file:
         base_opts['cookiefile'] = cookies_file
 
+    ffmpeg_available = bool(ffmpeg_path)
+
     def add_audio_postprocessor(opts):
-        if audio_only:
+        # Only add FFmpegExtractAudio when ffmpeg present — otherwise yt-dlp
+        # downloads succeed but postprocess fails with
+        # "Postprocessing: ffprobe and ffmpeg not found".
+        if audio_only and ffmpeg_available:
             opts.setdefault('postprocessors', [])
             opts['postprocessors'].append({
                 'key': 'FFmpegExtractAudio',
@@ -408,12 +515,25 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
             })
         return opts
 
-    hq_format = 'bestaudio/best' if audio_only else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+    if audio_only:
+        # Without ffmpeg, prefer m4a/mp3 directly so yt-dlp returns a Telegram-
+        # playable file without needing postprocess.
+        hq_format = (
+            'bestaudio/best'
+            if ffmpeg_available
+            else 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best'
+        )
+    else:
+        hq_format = (
+            'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+            if ffmpeg_available
+            else 'best[ext=mp4]/best'
+        )
 
     def make_opts(fmt, client=None, strip_cookies=False, extra_args=None):
         opts = base_opts.copy()
         opts['format'] = fmt
-        if not audio_only:
+        if not audio_only and ffmpeg_available:
             opts['merge_output_format'] = 'mp4'
         if strip_cookies:
             opts.pop('cookiefile', None)
@@ -453,7 +573,8 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
             opts = opts_fn()
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-                return ydl.prepare_filename(info)
+                resolved_path = _resolve_downloaded_path(info, output_path, audio_only)
+                return resolved_path or ydl.prepare_filename(info)
         except Exception as e:
             print(f"⚠️ Tier [{label}] failed: {e}")
             last_err = e
@@ -574,8 +695,9 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loop = asyncio.get_running_loop()
         hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
         
+        file_path = None
         try:
-            await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
+            file_path = await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
         except Exception as e:
             if "instagram.com" in url:
                 print(f"yt-dlp failed for Instagram. Trying Instaloader fallback for MP3. Error: {e}")
@@ -584,18 +706,23 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if mp4_files:
                     video_path = mp4_files[0]
                     mp3_path = os.path.splitext(video_path)[0] + ".mp3"
-                    
+
                     ffmpeg_path = shutil.which('ffmpeg')
                     if not ffmpeg_path:
                         for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
-                            if os.path.exists(p): ffmpeg_path = p; break
-                    
-                    if not ffmpeg_path:
-                        raise RuntimeError("FFmpeg not found! Cannot extract audio from Instagram video.")
-                    
-                    import subprocess
-                    cmd = [ffmpeg_path, '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
-                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            if os.path.exists(p):
+                                ffmpeg_path = p
+                                break
+
+                    if ffmpeg_path:
+                        import subprocess
+                        cmd = [ffmpeg_path, '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
+                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        file_path = mp3_path
+                    else:
+                        # No ffmpeg — ship the raw video; Telegram audio player handles mp4 audio track.
+                        print("⚠️ FFmpeg missing — sending Instagram video as audio (no mp3 extraction).")
+                        file_path = video_path
                 else:
                     raise RuntimeError("Instaloader failed to find downloaded video for MP3 extraction.")
             else:
@@ -603,19 +730,63 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # yt-dlp converts to .mp3 after postprocessing — glob for it
         mp3_files = glob.glob(f"{download_dir}/*.mp3")
+        ffmpeg_path_check = shutil.which('ffmpeg')
+        if not ffmpeg_path_check:
+            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                if os.path.exists(p):
+                    ffmpeg_path_check = p
+                    break
+        ffmpeg_available = bool(ffmpeg_path_check)
+
         if not mp3_files:
-            await status_msg.edit_text("❌ *Bhai MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
-            return
+            audio_candidates = []
+            if file_path and os.path.exists(file_path):
+                audio_candidates.append(file_path)
+            for candidate in glob.glob(f"{download_dir}/*"):
+                if os.path.splitext(candidate)[1].lower() in {".m4a", ".webm", ".opus", ".aac", ".mp4", ".mkv", ".wav", ".ogg"}:
+                    audio_candidates.append(candidate)
+
+            unique_candidates = []
+            seen = set()
+            for candidate in audio_candidates:
+                if candidate not in seen:
+                    seen.add(candidate)
+                    unique_candidates.append(candidate)
+            audio_candidates = unique_candidates
+
+            if ffmpeg_available and audio_candidates:
+                source_audio = audio_candidates[0]
+                mp3_path = os.path.splitext(source_audio)[0] + ".mp3"
+                if not os.path.exists(mp3_path):
+                    import subprocess
+                    cmd = [ffmpeg_path_check, '-y', '-i', source_audio, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
+                    try:
+                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                    except subprocess.CalledProcessError as exc:
+                        err = exc.stderr.decode(errors="ignore").strip() if exc.stderr else "Unknown error"
+                        raise RuntimeError(f"FFmpeg conversion failed: {err}") from exc
+                if os.path.exists(mp3_path):
+                    mp3_files = [mp3_path]
+            elif not ffmpeg_available and audio_candidates:
+                # No ffmpeg — pick best raw audio (m4a > opus > others) and ship as-is.
+                # Telegram plays m4a/ogg/opus natively in the audio player.
+                priority = {".m4a": 0, ".ogg": 1, ".opus": 2, ".aac": 3, ".webm": 4, ".wav": 5, ".mp4": 6, ".mkv": 7}
+                audio_candidates.sort(key=lambda p: priority.get(os.path.splitext(p)[1].lower(), 99))
+                mp3_files = [audio_candidates[0]]
+
+            if not mp3_files:
+                await status_msg.edit_text("❌ *Bhai MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
+                return
 
         file_path = mp3_files[0]
         if os.path.getsize(file_path) <= 50 * 1024 * 1024:
-            await status_msg.edit_text("📤 *Uploading MP3...*", parse_mode="Markdown")
+            await status_msg.edit_text("📤 *Uploading Audio...*", parse_mode="Markdown")
             with open(file_path, 'rb') as audio:
                 await source_msg.reply_audio(audio, caption="Enjoy your music! 🎵")
             track_download(user.id)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ *Bhai MP3 50MB se badi hai!* 😔", parse_mode="Markdown")
+            await status_msg.edit_text("❌ *Bhai audio 50MB se badi hai!* 😔", parse_mode="Markdown")
 
     except Exception as e:
         print(f"MP3 Error: {e}")
@@ -659,10 +830,8 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 raise e
 
-        if not os.path.exists(file_path):
-            base = os.path.splitext(file_path)[0]
-            candidates = glob.glob(f"{base}.*")
-            file_path = candidates[0] if candidates else file_path
+        if not file_path or not os.path.exists(file_path):
+            file_path = _find_largest_video_file(download_dir)
 
         if file_path and os.path.exists(file_path):
             if os.path.getsize(file_path) <= 50 * 1024 * 1024:
@@ -833,8 +1002,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _safe_answer_callback(update):
+        return
     query = update.callback_query
-    await query.answer()
     
     data = query.data
     url = None
@@ -862,6 +1032,9 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"❌ Exception while handling an update: {context.error}")
+    if _is_expired_callback_query_error(context.error):
+        print(f"ℹ️ Ignoring expired callback query error for update: {update}")
+        return
     if isinstance(update, Update) and update.effective_message:
         await update.effective_message.reply_text(
             f"⚠️ *Bhai thoda error aagaya:* `{context.error}`",
@@ -927,7 +1100,7 @@ def main():
     app.add_handler(CommandHandler("translate", translate_command))
     app.add_handler(CommandHandler("tr",        translate_command))
     app.add_handler(CommandHandler("remind",    remind_command))
-    app.add_handler(CallbackQueryHandler(button_callback, pattern="^mode_"))
+    app.add_handler(CallbackQueryHandler(button_callback, pattern="^(mode_|show_)"))
     app.add_handler(CallbackQueryHandler(dl_callback,     pattern="^dl_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(error_handler)
