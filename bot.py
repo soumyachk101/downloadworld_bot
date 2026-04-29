@@ -446,6 +446,52 @@ def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> 
         print("⚠️ Could not resolve downloaded file path from yt-dlp metadata.")
     return fallback
 
+def _ensure_netscape_cookies(path: str | None) -> str | None:
+    """yt-dlp expects Netscape cookie format. If the file is JSON (e.g. exported
+    via Instagram cookie editor extensions), convert it to a sibling .netscape
+    file and return that path. Returns the original path for Netscape files.
+    Returns None if path is None or unreadable."""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+    except Exception:
+        return path
+
+    if not content.startswith('['):
+        return path  # already Netscape
+
+    try:
+        cookies_data = json.loads(content)
+    except Exception:
+        return path
+
+    netscape_path = path + ".netscape"
+    lines = ["# Netscape HTTP Cookie File", "# Auto-generated from JSON cookies", ""]
+    for c in cookies_data:
+        name = c.get('name')
+        value = c.get('value')
+        if not name or value is None:
+            continue
+        domain = c.get('domain', '.instagram.com')
+        if not domain.startswith('.') and not domain.startswith('www'):
+            domain = '.' + domain
+        include_subdomains = "TRUE" if domain.startswith('.') else "FALSE"
+        cookie_path = c.get('path', '/')
+        secure = "TRUE" if c.get('secure', True) else "FALSE"
+        expires = int(c.get('expirationDate', 0)) or 0
+        lines.append("\t".join([domain, include_subdomains, cookie_path, secure, str(expires), name, value]))
+
+    try:
+        with open(netscape_path, 'w', encoding='utf-8') as f:
+            f.write("\n".join(lines) + "\n")
+        return netscape_path
+    except Exception as e:
+        print(f"⚠️ Failed to write Netscape cookies: {e}")
+        return path
+
+
 def _parse_extractor_args(args_str: str) -> dict:
     """Parse YOUTUBE_EXTRACTOR_ARGS into yt-dlp format.
 
@@ -725,17 +771,15 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if is_instagram:
             # YouTube player_client extractor args produce broken metadata for IG.
-            # Route directly to Instaloader; fall back to yt-dlp only on failure.
+            # Route directly to Instaloader; fall back to yt-dlp with IG cookies on failure.
             try:
                 file_path = await _instaloader_to_mp3()
             except Exception as e:
                 print(f"Instaloader failed for Instagram MP3, trying yt-dlp. Error: {e}")
-                file_path = await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
+                ig_cookies = _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE)
+                file_path = await asyncio.to_thread(download_video, url, download_dir, True, ig_cookies, hook)
         else:
-            try:
-                file_path = await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
-            except Exception as e:
-                raise e
+            file_path = await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
 
         # yt-dlp converts to .mp3 after postprocessing — glob for it
         mp3_files = glob.glob(f"{download_dir}/*.mp3")
@@ -825,19 +869,25 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
         
         file_path = None
-        try:
-            file_path = await asyncio.to_thread(download_video, url, download_dir, False, YOUTUBE_COOKIES_FILE, hook)
-        except Exception as e:
-            if "instagram.com" in url:
-                print(f"yt-dlp failed for Instagram. Trying Instaloader fallback. Error: {e}")
+        is_instagram = "instagram.com" in url
+        cookies_for_url = (
+            _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE) if is_instagram else YOUTUBE_COOKIES_FILE
+        )
+
+        if is_instagram:
+            # Try Instaloader first — yt-dlp's IG extractor often hits 401 even with cookies.
+            try:
                 await asyncio.to_thread(download_instagram, url, download_dir)
                 mp4_files = glob.glob(f"{download_dir}/*.mp4")
                 if mp4_files:
                     file_path = mp4_files[0]
                 else:
-                    raise RuntimeError("Instaloader failed to find downloaded MP4.")
-            else:
-                raise e
+                    raise RuntimeError("Instaloader produced no MP4")
+            except Exception as e:
+                print(f"Instaloader failed for Instagram MP4, trying yt-dlp. Error: {e}")
+                file_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
+        else:
+            file_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
 
         if not file_path or not os.path.exists(file_path):
             file_path = _find_largest_video_file(download_dir)
