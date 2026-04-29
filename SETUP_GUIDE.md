@@ -160,7 +160,6 @@ project/
 ### YouTube still blocked even with cookies
 - JSON cookies are auto-converted, but make sure the export isn't truncated.
 - Cookies can expire; export a fresh file if downloads start failing again.
-- Re-export cookies (they may have expired)
 - Try logging into YouTube in the browser first
 
 ### Instagram "Private post" error
