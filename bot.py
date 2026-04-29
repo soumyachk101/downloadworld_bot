@@ -258,6 +258,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "▸ `/mp4 <link>` — HD video\n"
         "▸ `/mp3 <link>` — High quality audio\n"
+        "▸ `/thumb <link>` — Hi-res thumbnail 🖼️\n"
+        "▸ `/subs <link> [lang]` — Subtitles (SRT) 📝\n"
+        "▸ `/gif <link>` — Animated GIF (8 sec) 🎞️\n"
         "▸ `/search <query>` — Search YouTube\n"
         "▸ Or just paste any link 🪄\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
@@ -1026,6 +1029,245 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         cleanup(download_dir)
 
+
+# ─── /thumb — High-res thumbnail ─────────────────────────────────────────────
+
+def _download_thumbnail(url: str, output_path: str) -> str:
+    """Fetch metadata via yt-dlp, download largest thumbnail. Blocking."""
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+    }
+    if YOUTUBE_COOKIES_FILE:
+        opts['cookiefile'] = YOUTUBE_COOKIES_FILE
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    thumbnails = info.get('thumbnails') or []
+    if not thumbnails and info.get('thumbnail'):
+        thumbnails = [{'url': info['thumbnail']}]
+    if not thumbnails:
+        raise RuntimeError("No thumbnail found in metadata.")
+
+    # Pick highest resolution
+    def _score(t):
+        return (t.get('width') or 0) * (t.get('height') or 0) or t.get('preference', 0)
+    thumb = max(thumbnails, key=_score)
+    thumb_url = thumb.get('url')
+    if not thumb_url:
+        raise RuntimeError("Thumbnail entry had no URL.")
+
+    import urllib.request
+    ext = os.path.splitext(thumb_url.split('?')[0])[1].lower() or '.jpg'
+    if ext not in {'.jpg', '.jpeg', '.png', '.webp'}:
+        ext = '.jpg'
+    safe_id = re.sub(r'[^A-Za-z0-9_-]', '_', str(info.get('id', 'thumb')))
+    out_file = os.path.join(output_path, f"{safe_id}{ext}")
+
+    req = urllib.request.Request(thumb_url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req, timeout=30) as resp, open(out_file, 'wb') as f:
+        shutil.copyfileobj(resp, f)
+    return out_file
+
+
+async def thumb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai link toh bhej!*\n\nExample: `/thumb https://youtu.be/xxx`",
+            parse_mode="Markdown",
+        )
+        return
+
+    url = context.args[0]
+    status_msg = await source_msg.reply_text("🖼️ *Fetching thumbnail...*", parse_mode="Markdown")
+    download_dir = f"downloads_thumb_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        file_path = await asyncio.to_thread(_download_thumbnail, url, download_dir)
+        if not file_path or not os.path.exists(file_path):
+            raise RuntimeError("Thumbnail file missing after download.")
+
+        await status_msg.edit_text("📤 *Uploading thumbnail...*", parse_mode="Markdown")
+        with open(file_path, 'rb') as photo:
+            await source_msg.reply_photo(photo, caption="🖼️ Hi-res thumbnail")
+        track_download(user.id)
+        await status_msg.delete()
+    except Exception as e:
+        print(f"Thumb Error: {e}")
+        await status_msg.edit_text("❌ *Thumbnail nahi mili. Link check kar!* 😔", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+# ─── /subs — Subtitle / caption SRT download ─────────────────────────────────
+
+def _download_subtitles(url: str, output_path: str, lang: str = 'en') -> str:
+    """Download subtitles via yt-dlp. Prefers manual, falls back to auto-generated."""
+    base = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'subtitleslangs': [lang, f'{lang}.*', 'en', 'en.*'],
+        'subtitlesformat': 'srt/best',
+        'outtmpl': f'{output_path}/%(id)s.%(ext)s',
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+    }
+    if YOUTUBE_COOKIES_FILE:
+        base['cookiefile'] = YOUTUBE_COOKIES_FILE
+
+    # Pass 1: manual subs only
+    opts = {**base, 'writesubtitles': True, 'writeautomaticsub': False}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.extract_info(url, download=True)
+    sub_files = glob.glob(f"{output_path}/*.srt") + glob.glob(f"{output_path}/*.vtt")
+    if sub_files:
+        return sub_files[0]
+
+    # Pass 2: include auto-generated
+    opts = {**base, 'writesubtitles': True, 'writeautomaticsub': True}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.extract_info(url, download=True)
+    sub_files = glob.glob(f"{output_path}/*.srt") + glob.glob(f"{output_path}/*.vtt")
+    if sub_files:
+        return sub_files[0]
+    raise RuntimeError("No subtitles available for this video.")
+
+
+async def subs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai link toh bhej!*\n\n"
+            "Example: `/subs https://youtu.be/xxx`\n"
+            "Optional language: `/subs <link> hi`",
+            parse_mode="Markdown",
+        )
+        return
+
+    url = context.args[0]
+    lang = context.args[1] if len(context.args) > 1 else 'en'
+    status_msg = await source_msg.reply_text(f"📝 *Fetching subtitles ({lang})...*", parse_mode="Markdown")
+    download_dir = f"downloads_subs_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        sub_path = await asyncio.to_thread(_download_subtitles, url, download_dir, lang)
+        await status_msg.edit_text("📤 *Uploading subtitle file...*", parse_mode="Markdown")
+        with open(sub_path, 'rb') as f:
+            await source_msg.reply_document(f, caption=f"📝 Subtitles ({lang})")
+        track_download(user.id)
+        await status_msg.delete()
+    except Exception as e:
+        print(f"Subs Error: {e}")
+        msg = "❌ *Is video pe subtitles nahi hain.* 😔" if "No subtitles" in str(e) else "❌ *Subtitle nahi mili.* 🙏"
+        await status_msg.edit_text(msg, parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+# ─── /gif — Convert short clip to animated GIF ───────────────────────────────
+
+def _video_to_gif(video_path: str, gif_path: str, max_seconds: int = 8, max_width: int = 480) -> None:
+    """Convert video to optimized GIF (loop). Two-pass: palette + dither for size."""
+    ffmpeg_bin = shutil.which('ffmpeg') or '/usr/bin/ffmpeg'
+    palette = gif_path + ".palette.png"
+    vf_palette = (
+        f"fps=15,scale={max_width}:-1:flags=lanczos,palettegen=stats_mode=diff"
+    )
+    vf_use = (
+        f"fps=15,scale={max_width}:-1:flags=lanczos[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle"
+    )
+    import subprocess
+    # Pass 1: palette
+    subprocess.run(
+        [ffmpeg_bin, '-y', '-t', str(max_seconds), '-i', video_path, '-vf', vf_palette, palette],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
+    # Pass 2: encode
+    subprocess.run(
+        [ffmpeg_bin, '-y', '-t', str(max_seconds), '-i', video_path, '-i', palette,
+         '-lavfi', vf_use, '-loop', '0', gif_path],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
+    try:
+        os.remove(palette)
+    except OSError:
+        pass
+
+
+async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai link toh bhej!*\n\n"
+            "Example: `/gif https://youtu.be/xxx`\n"
+            "Default: first 8 sec → animated GIF",
+            parse_mode="Markdown",
+        )
+        return
+
+    if not shutil.which('ffmpeg'):
+        await source_msg.reply_text("❌ *FFmpeg nahi mila — GIF nahi ban sakti.* 🙏", parse_mode="Markdown")
+        return
+
+    url = context.args[0]
+    status_msg = await source_msg.reply_text("🎞️ *Downloading clip for GIF...*", parse_mode="Markdown")
+    download_dir = f"downloads_gif_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        loop = asyncio.get_running_loop()
+        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
+
+        is_instagram = "instagram.com" in url
+        cookies_for_url = (
+            _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE) if is_instagram else YOUTUBE_COOKIES_FILE
+        )
+        video_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
+        if not video_path or not os.path.exists(video_path):
+            video_path = _find_largest_video_file(download_dir)
+        if not video_path:
+            raise RuntimeError("Video file missing after download.")
+
+        await status_msg.edit_text("⚙️ *Converting to GIF (8 sec, 480p, 15fps)...*", parse_mode="Markdown")
+        gif_path = os.path.splitext(video_path)[0] + ".gif"
+        await asyncio.to_thread(_video_to_gif, video_path, gif_path, 8, 480)
+
+        if not os.path.exists(gif_path):
+            raise RuntimeError("GIF conversion produced no file.")
+        if os.path.getsize(gif_path) > 50 * 1024 * 1024:
+            await status_msg.edit_text("❌ *GIF 50MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
+            return
+
+        await status_msg.edit_text("📤 *Uploading GIF...*", parse_mode="Markdown")
+        with open(gif_path, 'rb') as f:
+            # send_animation gives Telegram's looping GIF player
+            await context.bot.send_animation(
+                chat_id=update.effective_chat.id,
+                animation=f,
+                reply_to_message_id=source_msg.message_id,
+                caption="🎞️ Your GIF is ready!",
+            )
+        track_download(user.id)
+        await status_msg.delete()
+    except Exception as e:
+        print(f"GIF Error: {e}")
+        await status_msg.edit_text("❌ *Bhai GIF nahi bani. Link/length check kar.* 🙏", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("🔍 *Kya search karna hai?*\n\nExample: `/search divine gully gang`", parse_mode="Markdown")
@@ -1236,6 +1478,9 @@ async def post_init(application: Application):
         ("search",    "Search YouTube videos"),
         ("mp4",       "Download video via link"),
         ("mp3",       "Download audio via link"),
+        ("thumb",     "Hi-res thumbnail download"),
+        ("subs",      "Download subtitles (SRT)"),
+        ("gif",       "Convert clip to animated GIF"),
         ("stats",     "View your download stats"),
         ("tr",        "Translate to Hindi"),
     ]
@@ -1280,6 +1525,9 @@ def main():
     app.add_handler(CommandHandler("search",    search_command))
     app.add_handler(CommandHandler("mp3",       mp3_command))
     app.add_handler(CommandHandler("mp4",       mp4_command))
+    app.add_handler(CommandHandler("thumb",     thumb_command))
+    app.add_handler(CommandHandler("subs",      subs_command))
+    app.add_handler(CommandHandler("gif",       gif_command))
     app.add_handler(CommandHandler("translate", translate_command))
     app.add_handler(CommandHandler("tr",        translate_command))
     app.add_handler(CommandHandler("remind",    remind_command))
