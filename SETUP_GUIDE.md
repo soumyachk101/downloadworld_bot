@@ -158,7 +158,8 @@ project/
 - Run: `python -c "from dotenv import load_dotenv; load_dotenv(); print('OK')"`
 
 ### YouTube still blocked even with cookies
-- JSON cookies are auto-converted, but re-export if the file is malformed or expired.
+- JSON cookies are auto-converted, but re-export if the file looks malformed.
+- Cookies can expire; export a fresh file if downloads start failing again.
 - Re-export cookies (they may have expired)
 - Try logging into YouTube in the browser first
 
