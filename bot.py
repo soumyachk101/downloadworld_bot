@@ -695,22 +695,33 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
             opts['extractor_args'] = args
         return add_audio_postprocessor(opts)
 
+    # Permissive format string for non-YT sites (Pinterest, Twitter etc.) where
+    # ext-specific filters fail. Covers single-stream + split-stream cases.
+    permissive_fmt = (
+        'bestaudio/best' if audio_only
+        else 'bestvideo+bestaudio/best/b/bv*+ba/bv/ba/worst'
+    )
+
     tiers = [
         # 1. HQ + cookies + user extractor args
         (lambda: {**make_opts(hq_format),
                   **(({'extractor_args': _parse_extractor_args(YOUTUBE_EXTRACTOR_ARGS)}
                       if YOUTUBE_EXTRACTOR_ARGS else {}))},
          "HQ+cookies+extractor_args"),
-        # 2. Android client + cookies — bypasses bot detection
+        # 2. Android client + cookies — bypasses YT bot detection
         (lambda: make_opts(hq_format, client='android'),
          "HQ+android_client"),
-        # 3. iOS client + cookies — second bypass
+        # 3. iOS client + cookies — second YT bypass
         (lambda: make_opts('bestaudio/best' if audio_only else 'best', client='ios'),
          "best+ios_client"),
         # 4. TV embedded client + no cookies — very permissive
         (lambda: make_opts('best', client='tv_embedded', strip_cookies=True),
          "best+tv_embedded+no_cookies"),
-        # 5. Last resort: android, no cookies, worst-acceptable format
+        # 5. Permissive format, no client — works for non-YT sites (Pinterest,
+        # Twitter, Reddit) where ext filters fail.
+        (lambda: make_opts(permissive_fmt),
+         "permissive_format"),
+        # 6. Last resort: android, no cookies, any format
         (lambda: make_opts('b', client='android', strip_cookies=True),
          "fallback+android+no_cookies"),
     ]
@@ -1024,8 +1035,16 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_msg = await update.message.reply_text(f"🔍 *Searching for:* `{query}`...", parse_mode="Markdown")
     
     try:
-        # Search using yt-dlp
-        ydl_opts = {'quiet': True, 'no_warnings': True, 'format': 'best', 'noplaylist': True}
+        # Search using yt-dlp — pass YouTube cookies + android client to bypass bot check.
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'format': 'best',
+            'noplaylist': True,
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        }
+        if YOUTUBE_COOKIES_FILE:
+            ydl_opts['cookiefile'] = YOUTUBE_COOKIES_FILE
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = await asyncio.to_thread(ydl.extract_info, f"ytsearch1:{query}", download=False)
             if not info or 'entries' not in info or not info['entries']:
