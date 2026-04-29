@@ -195,91 +195,47 @@ scheduler = AsyncIOScheduler()
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    first_name = user.first_name if user and user.first_name else "Bhai"
     welcome_text = (
-        f"╭━━━━━━━━━━━━━━━━━━━╮\n"
-        f"  ⚡ *EVERYTHING DOWNLOADER* ⚡\n"
-        f"╰━━━━━━━━━━━━━━━━━━━╯\n\n"
-        f"👋 *Hey {first_name}!*\n"
-        f"_Your one-stop media downloader_ 🎬\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌟 *WHAT I CAN DO*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🎬  HD Video downloads\n"
-        f"🎵  MP3 / Audio extraction\n"
-        f"🔍  YouTube search engine\n"
-        f"🤖  AI fun modes (Roast • Rap • Shayari)\n"
-        f"🌐  Instant translation\n"
-        f"⏰  Smart reminders\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ *QUICK START*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 Paste any link → pick format\n"
-        f"📌 `/search <query>` → find YT videos\n"
-        f"📌 Tap buttons below to explore\n\n"
-        f"_Supports: YouTube • Instagram • Facebook • Twitter • TikTok_"
+        "👋 *Hi! Welcome to Everything Downloader Pro* 🚀\n\n"
+        "I can download high-quality videos and MP3s from almost any platform like YouTube, Instagram, and more!\n\n"
+        "📢 *Quick Links:*\n"
+        "• Use `/help` to see all commands\n"
+        "• Paste a link to start downloading\n"
+        "• Use `/search` to find YouTube videos\n\n"
+        "Choose an option below to explore features:"
     )
     keyboard = [
         [
-            InlineKeyboardButton("🎬 Download", callback_data="show_help"),
-            InlineKeyboardButton("🤖 AI Modes", callback_data="show_ai_modes"),
+            InlineKeyboardButton("📖 View Full Help", callback_data="show_help"),
+            InlineKeyboardButton("📊 My Stats", callback_data="show_stats")
         ],
-        [
-            InlineKeyboardButton("📊 My Stats", callback_data="show_stats"),
-            InlineKeyboardButton("📖 Help", callback_data="show_help"),
-        ],
-        [
-            InlineKeyboardButton("⭐ Rate Bot", url="https://t.me/share/url?url=Check%20out%20Everything%20Downloader%20Bot!"),
-        ],
+        [InlineKeyboardButton("🔥 AI Fun Modes", callback_data="show_ai_modes")]
     ]
-    await update.effective_message.reply_text(
+    await update.message.reply_text(
         welcome_text,
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown",
+        parse_mode="Markdown"
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
-        "╭━━━━━━━━━━━━━━━━━━━╮\n"
-        "  📖 *COMMAND CENTER* 📖\n"
-        "╰━━━━━━━━━━━━━━━━━━━╯\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "🎬 *DOWNLOADS*\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "▸ `/mp4 <link>` — HD video\n"
-        "▸ `/mp3 <link>` — High quality audio\n"
-        "▸ `/search <query>` — Search YouTube\n"
-        "▸ Or just paste any link 🪄\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "🤖 *AI FUN MODES*\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "🔥 Roast  •  ✍️ Shayari  •  🎤 Rap\n"
-        "🔮 Fortune  •  📝 Story  •  🍕 Recipe\n"
-        "_Use_ `/start` _→ AI Modes_\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "🌐 *UTILITIES*\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "▸ `/tr <text>` — Translate to Hindi\n"
-        "▸ `/remind 10m <task>` — Set reminder\n"
-        "▸ `/stats` — Your download stats\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 *PRO TIP*\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "_Reply to any message with_ `/tr` _to translate it!_"
+        "🛠️ *Everything Downloader Help* 🛠️\n\n"
+        "🚀 *Media Downloading:*\n"
+        "1. Just paste a link from YouTube, Insta, FB, Twitter.\n"
+        "2. Or use commands:\n"
+        "   • `/mp4 <link>`: High quality video\n"
+        "   • `/mp3 <link>`: High quality audio\n"
+        "   • `/search <query>`: Search and download from YT\n\n"
+        "🤖 *AI Features:*\n"
+        "Use `/start` to see AI buttons like Roast, Shayari, Rap, etc.\n\n"
+        "🌐 *Translation:*\n"
+        "• `/tr <text>`: Translate anything to Hindi.\n\n"
+        "⏰ *Reminders:*\n"
+        "• `/remind 10m Do work`: Reminds you in 10 minutes.\n\n"
+        "📊 *Statistics:*\n"
+        "• `/stats`: Check bot usage stats."
     )
-    keyboard = [
-        [
-            InlineKeyboardButton("🤖 AI Modes", callback_data="show_ai_modes"),
-            InlineKeyboardButton("📊 Stats", callback_data="show_stats"),
-        ],
-        [InlineKeyboardButton("🔙 Back to Menu", callback_data="show_start")],
-    ]
-    await update.effective_message.reply_text(
-        help_text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown",
-    )
+    await update.effective_message.reply_text(help_text, parse_mode="Markdown")
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stats = load_stats()
@@ -339,9 +295,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "show_help":
         await help_command(update, context)
         return
-    elif query.data == "show_start":
-        await start(update, context)
-        return
     elif query.data == "show_stats":
         await stats_command(update, context)
         return
@@ -352,25 +305,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🎤 Rap",      callback_data="mode_rap"),
              InlineKeyboardButton("🔮 Fortune", callback_data="mode_fortune")],
             [InlineKeyboardButton("📝 Story",    callback_data="mode_story"),
-             InlineKeyboardButton("🍕 Recipe",   callback_data="mode_recipe")],
-            [InlineKeyboardButton("🔙 Back to Menu", callback_data="show_start")],
+             InlineKeyboardButton("🍕 Recipe",   callback_data="mode_recipe")]
         ]
-        ai_text = (
-            "╭━━━━━━━━━━━━━━━━━━━╮\n"
-            "  🤖 *AI FUN ZONE* 🤖\n"
-            "╰━━━━━━━━━━━━━━━━━━━╯\n\n"
-            "_Pick your flavor of madness_ 👇\n\n"
-            "🔥 *Roast*  →  Savage burn for any name\n"
-            "✍️ *Shayari*  →  Ghalib-style poetry\n"
-            "🎤 *Rap*  →  Desi underground bars\n"
-            "🔮 *Fortune*  →  Funny astrology\n"
-            "📝 *Story*  →  Quick desi tale\n"
-            "🍕 *Recipe*  →  Bhai-style cooking\n"
-        )
         await query.edit_message_text(
-            ai_text,
+            "🤖 *AI Fun Modes:*\n\nSelect a mode below:",
             reply_markup=InlineKeyboardMarkup(ai_keyboard),
-            parse_mode="Markdown",
+            parse_mode="Markdown"
         )
         return
 
