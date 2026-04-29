@@ -60,7 +60,7 @@ readme_content = """<div align="center">
 
 </div>
 
-> 💡 Powered by `llama-3.1-8b-instant` via Groq API — **Completely FREE!**
+> 💡 Powered by `llama-3.1-70b-instant` via Groq API — **Completely FREE!**
 
 ---
 
