@@ -64,7 +64,7 @@ If you don't want to manage cookies files, you can extract YouTube's visitor dat
 #### Option 1: Instagram Cookies (Easiest for Containers/Cloud)
 1. Install a cookies export extension in your browser (e.g., "Get cookies.txt").
 2. Go to https://instagram.com while logged in.
-3. Export cookies as `instagram_cookies.txt` (Netscape format preferred; JSON export also works and is auto-converted).
+3. Export cookies as `instagram_cookies.txt` (Netscape or JSON format — JSON is auto-converted).
 4. Upload `instagram_cookies.txt` to your bot's directory.
 5. Add to `.env`:
    ```

@@ -565,7 +565,7 @@ def _ensure_netscape_cookies(path: str | None, default_domain: str = ".instagram
         value = c.get('value')
         if not name or value is None:
             continue
-        domain = c.get('domain') or default_domain
+        domain = c.get('domain', default_domain) or default_domain
         if not domain.startswith('.') and not domain.startswith('www'):
             domain = '.' + domain
         include_subdomains = "TRUE" if domain.startswith('.') else "FALSE"
