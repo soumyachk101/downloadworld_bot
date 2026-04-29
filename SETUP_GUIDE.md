@@ -26,7 +26,7 @@ Your credentials have been exposed in logs. Immediately:
    - Click the extension icon
    - Export/Save as `youtube_cookies.txt`
 
-3. Place the file in your project directory
+3. Place the file in your project directory (JSON exports are OK — the bot auto-converts to Netscape)
 
 4. Add to `.env`:
    ```
@@ -64,7 +64,7 @@ If you don't want to manage cookies files, you can extract YouTube's visitor dat
 #### Option 1: Instagram Cookies (Easiest for Containers/Cloud)
 1. Install a cookies export extension in your browser (e.g., "Get cookies.txt").
 2. Go to https://instagram.com while logged in.
-3. Export cookies as `instagram_cookies.txt` (Netscape format).
+3. Export cookies as `instagram_cookies.txt` (Netscape or JSON format — JSON is auto-converted).
 4. Upload `instagram_cookies.txt` to your bot's directory.
 5. Add to `.env`:
    ```
@@ -158,8 +158,8 @@ project/
 - Run: `python -c "from dotenv import load_dotenv; load_dotenv(); print('OK')"`
 
 ### YouTube still blocked even with cookies
-- Make sure cookies file is in Netscape format (not JSON)
-- Re-export cookies (they may have expired)
+- JSON cookies are auto-converted, but make sure the export isn't truncated.
+- Cookies can expire; export a fresh file if downloads start failing again.
 - Try logging into YouTube in the browser first
 
 ### Instagram "Private post" error

@@ -536,11 +536,12 @@ def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> 
         print("⚠️ Could not resolve downloaded file path from yt-dlp metadata.")
     return fallback
 
-def _ensure_netscape_cookies(path: str | None) -> str | None:
+def _ensure_netscape_cookies(path: str | None, default_domain: str = ".instagram.com") -> str | None:
     """yt-dlp expects Netscape cookie format. If the file is JSON (e.g. exported
     via Instagram cookie editor extensions), convert it to a sibling .netscape
     file and return that path. Returns the original path for Netscape files.
-    Returns None if path is None or unreadable."""
+    Returns None if path is None or unreadable. default_domain is used when a
+    cookie entry omits the domain field."""
     if not path or not os.path.exists(path):
         return None
     try:
@@ -557,6 +558,19 @@ def _ensure_netscape_cookies(path: str | None) -> str | None:
     except Exception:
         return path
 
+    normalized_default_domain = default_domain
+    if normalized_default_domain and not normalized_default_domain.startswith('.'):
+        normalized_default_domain = f".{normalized_default_domain}"
+
+    def normalize_domain(domain_value: str | None) -> str:
+        if not domain_value:
+            domain_value = normalized_default_domain or ""
+        if not domain_value:
+            return ""
+        if not domain_value.startswith('.') and not domain_value.startswith('www'):
+            domain_value = f".{domain_value}"
+        return domain_value
+
     netscape_path = path + ".netscape"
     lines = ["# Netscape HTTP Cookie File", "# Auto-generated from JSON cookies", ""]
     for c in cookies_data:
@@ -564,9 +578,7 @@ def _ensure_netscape_cookies(path: str | None) -> str | None:
         value = c.get('value')
         if not name or value is None:
             continue
-        domain = c.get('domain', '.instagram.com')
-        if not domain.startswith('.') and not domain.startswith('www'):
-            domain = '.' + domain
+        domain = normalize_domain(c.get('domain'))
         include_subdomains = "TRUE" if domain.startswith('.') else "FALSE"
         cookie_path = c.get('path', '/')
         secure = "TRUE" if c.get('secure', True) else "FALSE"
@@ -866,10 +878,11 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 file_path = await _instaloader_to_mp3()
             except Exception as e:
                 print(f"Instaloader failed for Instagram MP3, trying yt-dlp. Error: {e}")
-                ig_cookies = _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE)
+                ig_cookies = _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE, default_domain=".instagram.com")
                 file_path = await asyncio.to_thread(download_video, url, download_dir, True, ig_cookies, hook)
         else:
-            file_path = await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
+            yt_cookies = _ensure_netscape_cookies(YOUTUBE_COOKIES_FILE, default_domain=".youtube.com")
+            file_path = await asyncio.to_thread(download_video, url, download_dir, True, yt_cookies, hook)
 
         # yt-dlp converts to .mp3 after postprocessing — glob for it
         mp3_files = glob.glob(f"{download_dir}/*.mp3")
@@ -961,7 +974,9 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_path = None
         is_instagram = "instagram.com" in url
         cookies_for_url = (
-            _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE) if is_instagram else YOUTUBE_COOKIES_FILE
+            _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE, default_domain=".instagram.com")
+            if is_instagram
+            else _ensure_netscape_cookies(YOUTUBE_COOKIES_FILE, default_domain=".youtube.com")
         )
 
         if is_instagram:
