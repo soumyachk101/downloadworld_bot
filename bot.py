@@ -696,36 +696,45 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
         
         file_path = None
-        try:
-            file_path = await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
-        except Exception as e:
-            if "instagram.com" in url:
-                print(f"yt-dlp failed for Instagram. Trying Instaloader fallback for MP3. Error: {e}")
-                await asyncio.to_thread(download_instagram, url, download_dir)
-                mp4_files = glob.glob(f"{download_dir}/*.mp4")
-                if mp4_files:
-                    video_path = mp4_files[0]
-                    mp3_path = os.path.splitext(video_path)[0] + ".mp3"
+        is_instagram = "instagram.com" in url
 
-                    ffmpeg_path = shutil.which('ffmpeg')
-                    if not ffmpeg_path:
-                        for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
-                            if os.path.exists(p):
-                                ffmpeg_path = p
-                                break
+        def _resolve_ffmpeg() -> str | None:
+            path = shutil.which('ffmpeg')
+            if path:
+                return path
+            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                if os.path.exists(p):
+                    return p
+            return None
 
-                    if ffmpeg_path:
-                        import subprocess
-                        cmd = [ffmpeg_path, '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
-                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        file_path = mp3_path
-                    else:
-                        # No ffmpeg — ship the raw video; Telegram audio player handles mp4 audio track.
-                        print("⚠️ FFmpeg missing — sending Instagram video as audio (no mp3 extraction).")
-                        file_path = video_path
-                else:
-                    raise RuntimeError("Instaloader failed to find downloaded video for MP3 extraction.")
-            else:
+        async def _instaloader_to_mp3():
+            await asyncio.to_thread(download_instagram, url, download_dir)
+            mp4_files = glob.glob(f"{download_dir}/*.mp4")
+            if not mp4_files:
+                raise RuntimeError("Instaloader failed to find downloaded video for MP3 extraction.")
+            video_path = mp4_files[0]
+            mp3_path = os.path.splitext(video_path)[0] + ".mp3"
+            ffmpeg_bin = _resolve_ffmpeg()
+            if ffmpeg_bin:
+                import subprocess
+                cmd = [ffmpeg_bin, '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
+                subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return mp3_path
+            print("⚠️ FFmpeg missing — sending Instagram video as audio (no mp3 extraction).")
+            return video_path
+
+        if is_instagram:
+            # YouTube player_client extractor args produce broken metadata for IG.
+            # Route directly to Instaloader; fall back to yt-dlp only on failure.
+            try:
+                file_path = await _instaloader_to_mp3()
+            except Exception as e:
+                print(f"Instaloader failed for Instagram MP3, trying yt-dlp. Error: {e}")
+                file_path = await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
+        else:
+            try:
+                file_path = await asyncio.to_thread(download_video, url, download_dir, True, YOUTUBE_COOKIES_FILE, hook)
+            except Exception as e:
                 raise e
 
         # yt-dlp converts to .mp3 after postprocessing — glob for it
