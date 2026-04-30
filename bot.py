@@ -48,6 +48,7 @@ if INSTAGRAM_COOKIES_FILE and not os.path.exists(INSTAGRAM_COOKIES_FILE):
     INSTAGRAM_COOKIES_FILE = None
 
 def _read_int_env(name: str, default: int) -> int:
+    """Read an integer MB value from env; values < 1 are treated as 1 MB."""
     value = os.getenv(name)
     if not value:
         return default
@@ -60,8 +61,8 @@ def _read_int_env(name: str, default: int) -> int:
 TELEGRAM_STREAMING_LIMIT_MB = _read_int_env("TELEGRAM_STREAMING_LIMIT_MB", 50)
 TELEGRAM_MAX_UPLOAD_MB = _read_int_env("TELEGRAM_MAX_UPLOAD_MB", 500)
 if TELEGRAM_STREAMING_LIMIT_MB > TELEGRAM_MAX_UPLOAD_MB:
-    print("⚠️  TELEGRAM_STREAMING_LIMIT_MB exceeds TELEGRAM_MAX_UPLOAD_MB; using streaming limit as max.")
-    TELEGRAM_MAX_UPLOAD_MB = TELEGRAM_STREAMING_LIMIT_MB
+    print("⚠️  TELEGRAM_STREAMING_LIMIT_MB exceeds TELEGRAM_MAX_UPLOAD_MB; capping streaming limit.")
+    TELEGRAM_STREAMING_LIMIT_MB = TELEGRAM_MAX_UPLOAD_MB
 
 TELEGRAM_STREAMING_LIMIT_BYTES = TELEGRAM_STREAMING_LIMIT_MB * 1024 * 1024
 TELEGRAM_MAX_UPLOAD_BYTES = TELEGRAM_MAX_UPLOAD_MB * 1024 * 1024
@@ -814,6 +815,10 @@ def cleanup(path: str):
 def _is_request_entity_too_large(err: Exception) -> bool:
     return isinstance(err, BadRequest) and "Request Entity Too Large" in str(err)
 
+def _log_fallback_upload_error(upload_err: Exception, fallback_err: Exception):
+    print(f"❌ Upload failed: {upload_err}")
+    print(f"❌ Fallback upload failed: {fallback_err}")
+
 async def _reply_document_with_timeouts(source_msg, file_path: str, caption: str):
     with open(file_path, 'rb') as doc:
         await source_msg.reply_document(
@@ -1059,8 +1064,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await status_msg.delete()
                         return
                     except Exception as fallback_err:
-                        print(f"❌ Upload failed: {upload_err}")
-                        print(f"❌ Fallback upload failed: {fallback_err}")
+                        _log_fallback_upload_error(upload_err, fallback_err)
                         await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{fallback_err}`", parse_mode="Markdown")
                         return
                 print(f"❌ Upload failed: {upload_err}")
@@ -1175,8 +1179,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             await status_msg.delete()
                             return
                         except Exception as fallback_err:
-                            print(f"❌ Upload failed: {upload_err}")
-                            print(f"❌ Fallback upload failed: {fallback_err}")
+                            _log_fallback_upload_error(upload_err, fallback_err)
                             await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{fallback_err}`", parse_mode="Markdown")
                             return
                     print(f"❌ Upload failed: {upload_err}")
