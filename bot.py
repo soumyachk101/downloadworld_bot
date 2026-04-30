@@ -11,7 +11,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.error import BadRequest
 from telegram.ext import (
     Application,
@@ -46,6 +46,25 @@ INSTAGRAM_COOKIES_FILE = os.getenv("INSTAGRAM_COOKIES_FILE")
 if INSTAGRAM_COOKIES_FILE and not os.path.exists(INSTAGRAM_COOKIES_FILE):
     print(f"⚠️  INSTAGRAM_COOKIES_FILE is set but file not found: {INSTAGRAM_COOKIES_FILE}")
     INSTAGRAM_COOKIES_FILE = None
+
+def _read_int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if not value:
+        return default
+    try:
+        return max(1, int(value))
+    except ValueError:
+        print(f"⚠️  Invalid {name}='{value}', using {default}")
+        return default
+
+TELEGRAM_STREAMING_LIMIT_MB = _read_int_env("TELEGRAM_STREAMING_LIMIT_MB", 50)
+TELEGRAM_MAX_UPLOAD_MB = _read_int_env("TELEGRAM_MAX_UPLOAD_MB", 500)
+if TELEGRAM_STREAMING_LIMIT_MB > TELEGRAM_MAX_UPLOAD_MB:
+    print("⚠️  TELEGRAM_STREAMING_LIMIT_MB exceeds TELEGRAM_MAX_UPLOAD_MB; using streaming limit as max.")
+    TELEGRAM_MAX_UPLOAD_MB = TELEGRAM_STREAMING_LIMIT_MB
+
+TELEGRAM_STREAMING_LIMIT_BYTES = TELEGRAM_STREAMING_LIMIT_MB * 1024 * 1024
+TELEGRAM_MAX_UPLOAD_BYTES = TELEGRAM_MAX_UPLOAD_MB * 1024 * 1024
 
 # ─── Groq Client ─────────────────────────────────────────────────────────────
 groq_client = None
@@ -789,6 +808,20 @@ def cleanup(path: str):
     except Exception as e:
         print(f"Cleanup Error: {e}")
 
+def _is_request_entity_too_large(err: Exception) -> bool:
+    return isinstance(err, BadRequest) and "Request Entity Too Large" in str(err)
+
+async def _reply_document_with_timeouts(source_msg, file_path: str, caption: str):
+    with open(file_path, 'rb') as doc:
+        await source_msg.reply_document(
+            InputFile(doc, filename=os.path.basename(file_path)),
+            caption=caption,
+            write_timeout=600,
+            read_timeout=600,
+            connect_timeout=600,
+            pool_timeout=600,
+        )
+
 def _compress_video(input_path: str, output_path: str):
     """Compress video using ffmpeg to reduce file size while maintaining decent quality."""
     ffmpeg_bin = shutil.which('ffmpeg')
@@ -994,14 +1027,43 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         file_path = mp3_files[0]
-        if os.path.getsize(file_path) <= 500 * 1024 * 1024:
-            await status_msg.edit_text("📤 *Uploading Audio...*", parse_mode="Markdown")
-            with open(file_path, 'rb') as audio:
-                await source_msg.reply_audio(audio, caption="Enjoy your music! 🎵")
-            track_download(user.id)
-            await status_msg.delete()
+        file_size = os.path.getsize(file_path)
+        if file_size <= TELEGRAM_MAX_UPLOAD_BYTES:
+            send_as_document = file_size > TELEGRAM_STREAMING_LIMIT_BYTES
+            try:
+                if send_as_document:
+                    await status_msg.edit_text("📦 *Audio bada hai — file ke roop mein bhej raha...*", parse_mode="Markdown")
+                    await _reply_document_with_timeouts(source_msg, file_path, "🎵 Audio file (large)")
+                else:
+                    await status_msg.edit_text("📤 *Uploading Audio...*", parse_mode="Markdown")
+                    with open(file_path, 'rb') as audio:
+                        await source_msg.reply_audio(
+                            audio,
+                            caption="Enjoy your music! 🎵",
+                            write_timeout=600,
+                            read_timeout=600,
+                            connect_timeout=600,
+                            pool_timeout=600,
+                        )
+                track_download(user.id)
+                await status_msg.delete()
+            except Exception as upload_err:
+                if not send_as_document and _is_request_entity_too_large(upload_err):
+                    try:
+                        await status_msg.edit_text("📦 *Audio bada hai — file ke roop mein bhej raha...*", parse_mode="Markdown")
+                        await _reply_document_with_timeouts(source_msg, file_path, "🎵 Audio file (large)")
+                        track_download(user.id)
+                        await status_msg.delete()
+                        return
+                    except Exception as fallback_err:
+                        upload_err = fallback_err
+                print(f"❌ Upload failed: {upload_err}")
+                await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{upload_err}`", parse_mode="Markdown")
         else:
-            await status_msg.edit_text("❌ *Bhai audio 500MB se badi hai!* 😔", parse_mode="Markdown")
+            await status_msg.edit_text(
+                f"❌ *Bhai audio {TELEGRAM_MAX_UPLOAD_MB}MB se badi hai!* 😔",
+                parse_mode="Markdown",
+            )
 
     except Exception as e:
         print(f"MP3 Error: {e}")
@@ -1077,26 +1139,44 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as ce:
                 print(f"⚠️ Compression step encountered an error: {ce}")
             
-            if os.path.getsize(file_path) <= 500 * 1024 * 1024:
-                await status_msg.edit_text("📤 *Uploading Video...* (This may take a while)", parse_mode="Markdown")
+            file_size = os.path.getsize(file_path)
+            if file_size <= TELEGRAM_MAX_UPLOAD_BYTES:
+                send_as_document = file_size > TELEGRAM_STREAMING_LIMIT_BYTES
                 try:
-                    with open(file_path, 'rb') as video:
-                        await source_msg.reply_video(
-                            video, 
-                            caption="Your video is ready! 🎬",
-                            supports_streaming=True,
-                            write_timeout=600,
-                            read_timeout=600,
-                            connect_timeout=600,
-                            pool_timeout=600
-                        )
+                    if send_as_document:
+                        await status_msg.edit_text("📦 *Video bada hai — file ke roop mein bhej raha...*", parse_mode="Markdown")
+                        await _reply_document_with_timeouts(source_msg, file_path, "🎬 Video file (large)")
+                    else:
+                        await status_msg.edit_text("📤 *Uploading Video...* (This may take a while)", parse_mode="Markdown")
+                        with open(file_path, 'rb') as video:
+                            await source_msg.reply_video(
+                                video, 
+                                caption="Your video is ready! 🎬",
+                                supports_streaming=True,
+                                write_timeout=600,
+                                read_timeout=600,
+                                connect_timeout=600,
+                                pool_timeout=600
+                            )
                     track_download(user.id)
                     await status_msg.delete()
                 except Exception as upload_err:
+                    if not send_as_document and _is_request_entity_too_large(upload_err):
+                        try:
+                            await status_msg.edit_text("📦 *Video bada hai — file ke roop mein bhej raha...*", parse_mode="Markdown")
+                            await _reply_document_with_timeouts(source_msg, file_path, "🎬 Video file (large)")
+                            track_download(user.id)
+                            await status_msg.delete()
+                            return
+                        except Exception as fallback_err:
+                            upload_err = fallback_err
                     print(f"❌ Upload failed: {upload_err}")
                     await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{upload_err}`", parse_mode="Markdown")
             else:
-                await status_msg.edit_text("❌ *Bhai video 500MB se badi hai!* 😔", parse_mode="Markdown")
+                await status_msg.edit_text(
+                    f"❌ *Bhai video {TELEGRAM_MAX_UPLOAD_MB}MB se badi hai!* 😔",
+                    parse_mode="Markdown",
+                )
         else:
             await status_msg.edit_text("❌ *Bhai file nahi mili download ke baad.* 😔", parse_mode="Markdown")
 
@@ -1323,8 +1403,11 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not os.path.exists(gif_path):
             raise RuntimeError("GIF conversion produced no file.")
-        if os.path.getsize(gif_path) > 500 * 1024 * 1024:
-            await status_msg.edit_text("❌ *GIF 500MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
+        if os.path.getsize(gif_path) > TELEGRAM_MAX_UPLOAD_BYTES:
+            await status_msg.edit_text(
+                f"❌ *GIF {TELEGRAM_MAX_UPLOAD_MB}MB se badi ban gayi. Shorter clip try kar.* 😔",
+                parse_mode="Markdown",
+            )
             return
 
         await status_msg.edit_text("📤 *Uploading GIF...*", parse_mode="Markdown")
