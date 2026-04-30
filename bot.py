@@ -830,6 +830,17 @@ async def _reply_document_with_timeouts(source_msg: Message, file_path: str, cap
             pool_timeout=600,
         )
 
+async def _handle_document_fallback(status_msg, source_msg: Message, file_path: str, caption: str,
+                                    large_message: str, upload_err: Exception) -> bool:
+    try:
+        await status_msg.edit_text(large_message, parse_mode="Markdown")
+        await _reply_document_with_timeouts(source_msg, file_path, caption)
+        return True
+    except Exception as fallback_err:
+        _log_fallback_upload_error(upload_err, fallback_err)
+        await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{fallback_err}`", parse_mode="Markdown")
+        return False
+
 def _compress_video(input_path: str, output_path: str):
     """Compress video using ffmpeg to reduce file size while maintaining decent quality."""
     ffmpeg_bin = shutil.which('ffmpeg')
@@ -1057,16 +1068,18 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await status_msg.delete()
             except Exception as upload_err:
                 if not send_as_document and _is_request_entity_too_large(upload_err):
-                    try:
-                        await status_msg.edit_text(LARGE_AUDIO_DOCUMENT_MESSAGE, parse_mode="Markdown")
-                        await _reply_document_with_timeouts(source_msg, file_path, "🎵 Audio file (large)")
+                    fallback_ok = await _handle_document_fallback(
+                        status_msg,
+                        source_msg,
+                        file_path,
+                        "🎵 Audio file (large)",
+                        LARGE_AUDIO_DOCUMENT_MESSAGE,
+                        upload_err,
+                    )
+                    if fallback_ok:
                         track_download(user.id)
                         await status_msg.delete()
-                        return
-                    except Exception as fallback_err:
-                        _log_fallback_upload_error(upload_err, fallback_err)
-                        await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{fallback_err}`", parse_mode="Markdown")
-                        return
+                    return
                 print(f"❌ Upload failed: {upload_err}")
                 await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{upload_err}`", parse_mode="Markdown")
         else:
@@ -1172,16 +1185,18 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await status_msg.delete()
                 except Exception as upload_err:
                     if not send_as_document and _is_request_entity_too_large(upload_err):
-                        try:
-                            await status_msg.edit_text(LARGE_VIDEO_DOCUMENT_MESSAGE, parse_mode="Markdown")
-                            await _reply_document_with_timeouts(source_msg, file_path, "🎬 Video file (large)")
+                        fallback_ok = await _handle_document_fallback(
+                            status_msg,
+                            source_msg,
+                            file_path,
+                            "🎬 Video file (large)",
+                            LARGE_VIDEO_DOCUMENT_MESSAGE,
+                            upload_err,
+                        )
+                        if fallback_ok:
                             track_download(user.id)
                             await status_msg.delete()
-                            return
-                        except Exception as fallback_err:
-                            _log_fallback_upload_error(upload_err, fallback_err)
-                            await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{fallback_err}`", parse_mode="Markdown")
-                            return
+                        return
                     print(f"❌ Upload failed: {upload_err}")
                     await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{upload_err}`", parse_mode="Markdown")
             else:
