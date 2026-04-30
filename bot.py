@@ -1030,9 +1030,10 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_size = os.path.getsize(file_path)
         if file_size <= TELEGRAM_MAX_UPLOAD_BYTES:
             send_as_document = file_size > TELEGRAM_STREAMING_LIMIT_BYTES
+            large_audio_msg = "📦 *Audio bada hai — file ke roop mein bhej raha...*"
             try:
                 if send_as_document:
-                    await status_msg.edit_text("📦 *Audio bada hai — file ke roop mein bhej raha...*", parse_mode="Markdown")
+                    await status_msg.edit_text(large_audio_msg, parse_mode="Markdown")
                     await _reply_document_with_timeouts(source_msg, file_path, "🎵 Audio file (large)")
                 else:
                     await status_msg.edit_text("📤 *Uploading Audio...*", parse_mode="Markdown")
@@ -1050,7 +1051,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as upload_err:
                 if not send_as_document and _is_request_entity_too_large(upload_err):
                     try:
-                        await status_msg.edit_text("📦 *Audio bada hai — file ke roop mein bhej raha...*", parse_mode="Markdown")
+                        await status_msg.edit_text(large_audio_msg, parse_mode="Markdown")
                         await _reply_document_with_timeouts(source_msg, file_path, "🎵 Audio file (large)")
                         track_download(user.id)
                         await status_msg.delete()
@@ -1142,9 +1143,10 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_size = os.path.getsize(file_path)
             if file_size <= TELEGRAM_MAX_UPLOAD_BYTES:
                 send_as_document = file_size > TELEGRAM_STREAMING_LIMIT_BYTES
+                large_video_msg = "📦 *Video bada hai — file ke roop mein bhej raha...*"
                 try:
                     if send_as_document:
-                        await status_msg.edit_text("📦 *Video bada hai — file ke roop mein bhej raha...*", parse_mode="Markdown")
+                        await status_msg.edit_text(large_video_msg, parse_mode="Markdown")
                         await _reply_document_with_timeouts(source_msg, file_path, "🎬 Video file (large)")
                     else:
                         await status_msg.edit_text("📤 *Uploading Video...* (This may take a while)", parse_mode="Markdown")
@@ -1163,7 +1165,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as upload_err:
                     if not send_as_document and _is_request_entity_too_large(upload_err):
                         try:
-                            await status_msg.edit_text("📦 *Video bada hai — file ke roop mein bhej raha...*", parse_mode="Markdown")
+                            await status_msg.edit_text(large_video_msg, parse_mode="Markdown")
                             await _reply_document_with_timeouts(source_msg, file_path, "🎬 Video file (large)")
                             track_download(user.id)
                             await status_msg.delete()
