@@ -11,7 +11,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, Message
 from telegram.error import BadRequest
 from telegram.ext import (
     Application,
@@ -48,7 +48,7 @@ if INSTAGRAM_COOKIES_FILE and not os.path.exists(INSTAGRAM_COOKIES_FILE):
     INSTAGRAM_COOKIES_FILE = None
 
 def _read_int_env(name: str, default: int) -> int:
-    """Read an integer MB value from env; values < 1 are treated as 1 MB."""
+    """Read an integer MB value from env; values less than 1 are clamped to 1 MB."""
     value = os.getenv(name)
     if not value:
         return default
@@ -67,8 +67,8 @@ if TELEGRAM_STREAMING_LIMIT_MB > TELEGRAM_MAX_UPLOAD_MB:
 TELEGRAM_STREAMING_LIMIT_BYTES = TELEGRAM_STREAMING_LIMIT_MB * 1024 * 1024
 TELEGRAM_MAX_UPLOAD_BYTES = TELEGRAM_MAX_UPLOAD_MB * 1024 * 1024
 
-LARGE_AUDIO_DOCUMENT_MSG = "📦 *Audio bada hai — file ke roop mein bhej raha...*"
-LARGE_VIDEO_DOCUMENT_MSG = "📦 *Video bada hai — file ke roop mein bhej raha...*"
+LARGE_AUDIO_DOCUMENT_MESSAGE = "📦 *Audio bada hai — file ke roop mein bhej raha...*"
+LARGE_VIDEO_DOCUMENT_MESSAGE = "📦 *Video bada hai — file ke roop mein bhej raha...*"
 
 # ─── Groq Client ─────────────────────────────────────────────────────────────
 groq_client = None
@@ -819,7 +819,7 @@ def _log_fallback_upload_error(upload_err: Exception, fallback_err: Exception):
     print(f"❌ Upload failed: {upload_err}")
     print(f"❌ Fallback upload failed: {fallback_err}")
 
-async def _reply_document_with_timeouts(source_msg, file_path: str, caption: str):
+async def _reply_document_with_timeouts(source_msg: Message, file_path: str, caption: str):
     with open(file_path, 'rb') as doc:
         await source_msg.reply_document(
             InputFile(doc, filename=os.path.basename(file_path)),
@@ -1040,7 +1040,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             send_as_document = file_size > TELEGRAM_STREAMING_LIMIT_BYTES
             try:
                 if send_as_document:
-                    await status_msg.edit_text(LARGE_AUDIO_DOCUMENT_MSG, parse_mode="Markdown")
+                    await status_msg.edit_text(LARGE_AUDIO_DOCUMENT_MESSAGE, parse_mode="Markdown")
                     await _reply_document_with_timeouts(source_msg, file_path, "🎵 Audio file (large)")
                 else:
                     await status_msg.edit_text("📤 *Uploading Audio...*", parse_mode="Markdown")
@@ -1058,7 +1058,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as upload_err:
                 if not send_as_document and _is_request_entity_too_large(upload_err):
                     try:
-                        await status_msg.edit_text(LARGE_AUDIO_DOCUMENT_MSG, parse_mode="Markdown")
+                        await status_msg.edit_text(LARGE_AUDIO_DOCUMENT_MESSAGE, parse_mode="Markdown")
                         await _reply_document_with_timeouts(source_msg, file_path, "🎵 Audio file (large)")
                         track_download(user.id)
                         await status_msg.delete()
@@ -1154,7 +1154,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 send_as_document = file_size > TELEGRAM_STREAMING_LIMIT_BYTES
                 try:
                     if send_as_document:
-                        await status_msg.edit_text(LARGE_VIDEO_DOCUMENT_MSG, parse_mode="Markdown")
+                        await status_msg.edit_text(LARGE_VIDEO_DOCUMENT_MESSAGE, parse_mode="Markdown")
                         await _reply_document_with_timeouts(source_msg, file_path, "🎬 Video file (large)")
                     else:
                         await status_msg.edit_text("📤 *Uploading Video...* (This may take a while)", parse_mode="Markdown")
@@ -1173,7 +1173,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as upload_err:
                     if not send_as_document and _is_request_entity_too_large(upload_err):
                         try:
-                            await status_msg.edit_text(LARGE_VIDEO_DOCUMENT_MSG, parse_mode="Markdown")
+                            await status_msg.edit_text(LARGE_VIDEO_DOCUMENT_MESSAGE, parse_mode="Markdown")
                             await _reply_document_with_timeouts(source_msg, file_path, "🎬 Video file (large)")
                             track_download(user.id)
                             await status_msg.delete()

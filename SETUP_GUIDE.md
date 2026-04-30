@@ -122,7 +122,7 @@ python setup_assistant.py
 ### Optional:
 - `INSTA_USERNAME`: Instagram username (for private posts)
 - `INSTA_PASSWORD`: Instagram password (for private posts) - prefer session file or cookies
-- `INSTAGRAM_COOKIES_FILE`: Path to Instagram cookies.txt file (byass checkpoint issues, great for containers)
+- `INSTAGRAM_COOKIES_FILE`: Path to Instagram cookies.txt file (bypass checkpoint issues, great for containers)
 - `YOUTUBE_COOKIES_FILE`: Path to cookies.txt file for YouTube
 - `YOUTUBE_EXTRACTOR_ARGS`: yt-dlp extractor arguments (alternative to cookies), e.g. `"youtube:player_skip=webpage,configs;visitor_data=VISITOR_DATA"`
 - `TELEGRAM_STREAMING_LIMIT_MB`: Size (MB) above which media is sent as document (default: 50)
