@@ -640,7 +640,7 @@ def download_video(url: str, output_path: str, audio_only: bool = False, cookies
         'quiet': True,
         'no_warnings': True,
         'progress_hooks': [progress_hook] if progress_hook else [],
-        'socket_timeout': 30, # Prevent "uncomplete" downloads
+        'socket_timeout': 420, # Prevent "uncomplete" downloads
         'retries': 10,
     }
     
@@ -949,14 +949,14 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         file_path = mp3_files[0]
-        if os.path.getsize(file_path) <= 50 * 1024 * 1024:
+        if os.path.getsize(file_path) <= 500 * 1024 * 1024:
             await status_msg.edit_text("📤 *Uploading Audio...*", parse_mode="Markdown")
             with open(file_path, 'rb') as audio:
                 await source_msg.reply_audio(audio, caption="Enjoy your music! 🎵")
             track_download(user.id)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ *Bhai audio 50MB se badi hai!* 😔", parse_mode="Markdown")
+            await status_msg.edit_text("❌ *Bhai audio 500MB se badi hai!* 😔", parse_mode="Markdown")
 
     except Exception as e:
         print(f"MP3 Error: {e}")
@@ -1012,14 +1012,14 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_path = _find_largest_video_file(download_dir)
 
         if file_path and os.path.exists(file_path):
-            if os.path.getsize(file_path) <= 50 * 1024 * 1024:
+            if os.path.getsize(file_path) <= 500 * 1024 * 1024:
                 await status_msg.edit_text("📤 *Uploading Video...*", parse_mode="Markdown")
                 with open(file_path, 'rb') as video:
                     await source_msg.reply_video(video, caption="Your video is ready! 🎬")
                 track_download(user.id)
                 await status_msg.delete()
             else:
-                await status_msg.edit_text("❌ *Bhai video 50MB se badi hai!* 😔", parse_mode="Markdown")
+                await status_msg.edit_text("❌ *Bhai video 500MB se badi hai!* 😔", parse_mode="Markdown")
         else:
             await status_msg.edit_text("❌ *Bhai file nahi mili download ke baad.* 😔", parse_mode="Markdown")
 
@@ -1068,7 +1068,7 @@ def _download_thumbnail(url: str, output_path: str) -> str:
     out_file = os.path.join(output_path, f"{safe_id}{ext}")
 
     req = urllib.request.Request(thumb_url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, timeout=30) as resp, open(out_file, 'wb') as f:
+    with urllib.request.urlopen(req, timeout=420) as resp, open(out_file, 'wb') as f:
         shutil.copyfileobj(resp, f)
     return out_file
 
@@ -1246,8 +1246,8 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not os.path.exists(gif_path):
             raise RuntimeError("GIF conversion produced no file.")
-        if os.path.getsize(gif_path) > 50 * 1024 * 1024:
-            await status_msg.edit_text("❌ *GIF 50MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
+        if os.path.getsize(gif_path) > 500 * 1024 * 1024:
+            await status_msg.edit_text("❌ *GIF 500MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
             return
 
         await status_msg.edit_text("📤 *Uploading GIF...*", parse_mode="Markdown")
@@ -1515,6 +1515,10 @@ def main():
     app = (
         Application.builder()
         .token(BOT_TOKEN)
+        .read_timeout(420)
+        .write_timeout(420)
+        .connect_timeout(420)
+        .pool_timeout(420)
         .post_init(post_init)
         .build()
     )
