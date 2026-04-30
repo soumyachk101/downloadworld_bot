@@ -47,7 +47,7 @@ if INSTAGRAM_COOKIES_FILE and not os.path.exists(INSTAGRAM_COOKIES_FILE):
     print(f"⚠️  INSTAGRAM_COOKIES_FILE is set but file not found: {INSTAGRAM_COOKIES_FILE}")
     INSTAGRAM_COOKIES_FILE = None
 
-def _read_int_env(name: str, default: int) -> int:
+def _read_mb_env_value(name: str, default: int) -> int:
     """Read an integer MB value from env; values less than 1 are clamped to 1 MB."""
     value = os.getenv(name)
     if not value:
@@ -58,8 +58,8 @@ def _read_int_env(name: str, default: int) -> int:
         print(f"⚠️  Invalid {name}='{value}', using {default}")
         return default
 
-TELEGRAM_STREAMING_LIMIT_MB = _read_int_env("TELEGRAM_STREAMING_LIMIT_MB", 50)
-TELEGRAM_MAX_UPLOAD_MB = _read_int_env("TELEGRAM_MAX_UPLOAD_MB", 500)
+TELEGRAM_STREAMING_LIMIT_MB = _read_mb_env_value("TELEGRAM_STREAMING_LIMIT_MB", 50)
+TELEGRAM_MAX_UPLOAD_MB = _read_mb_env_value("TELEGRAM_MAX_UPLOAD_MB", 500)
 if TELEGRAM_STREAMING_LIMIT_MB > TELEGRAM_MAX_UPLOAD_MB:
     print("⚠️  TELEGRAM_STREAMING_LIMIT_MB exceeds TELEGRAM_MAX_UPLOAD_MB; capping streaming limit.")
     TELEGRAM_STREAMING_LIMIT_MB = TELEGRAM_MAX_UPLOAD_MB
@@ -830,7 +830,7 @@ async def _reply_document_with_timeouts(source_msg: Message, file_path: str, cap
             pool_timeout=600,
         )
 
-async def _handle_document_fallback(status_msg, source_msg: Message, file_path: str, caption: str,
+async def _handle_document_fallback(status_msg: Message, source_msg: Message, file_path: str, caption: str,
                                     large_message: str, upload_err: Exception) -> bool:
     try:
         await status_msg.edit_text(large_message, parse_mode="Markdown")
