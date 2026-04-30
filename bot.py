@@ -949,14 +949,14 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         file_path = mp3_files[0]
-        if os.path.getsize(file_path) <= 50 * 1024 * 1024:
+        if os.path.getsize(file_path) <= 500 * 1024 * 1024:
             await status_msg.edit_text("📤 *Uploading Audio...*", parse_mode="Markdown")
             with open(file_path, 'rb') as audio:
                 await source_msg.reply_audio(audio, caption="Enjoy your music! 🎵")
             track_download(user.id)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ *Bhai audio 50MB se badi hai!* 😔", parse_mode="Markdown")
+            await status_msg.edit_text("❌ *Bhai audio 500MB se badi hai!* 😔", parse_mode="Markdown")
 
     except Exception as e:
         print(f"MP3 Error: {e}")
@@ -1012,14 +1012,14 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_path = _find_largest_video_file(download_dir)
 
         if file_path and os.path.exists(file_path):
-            if os.path.getsize(file_path) <= 50 * 1024 * 1024:
+            if os.path.getsize(file_path) <= 500 * 1024 * 1024:
                 await status_msg.edit_text("📤 *Uploading Video...*", parse_mode="Markdown")
                 with open(file_path, 'rb') as video:
                     await source_msg.reply_video(video, caption="Your video is ready! 🎬")
                 track_download(user.id)
                 await status_msg.delete()
             else:
-                await status_msg.edit_text("❌ *Bhai video 50MB se badi hai!* 😔", parse_mode="Markdown")
+                await status_msg.edit_text("❌ *Bhai video 500MB se badi hai!* 😔", parse_mode="Markdown")
         else:
             await status_msg.edit_text("❌ *Bhai file nahi mili download ke baad.* 😔", parse_mode="Markdown")
 
@@ -1246,8 +1246,8 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not os.path.exists(gif_path):
             raise RuntimeError("GIF conversion produced no file.")
-        if os.path.getsize(gif_path) > 50 * 1024 * 1024:
-            await status_msg.edit_text("❌ *GIF 50MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
+        if os.path.getsize(gif_path) > 500 * 1024 * 1024:
+            await status_msg.edit_text("❌ *GIF 500MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
             return
 
         await status_msg.edit_text("📤 *Uploading GIF...*", parse_mode="Markdown")

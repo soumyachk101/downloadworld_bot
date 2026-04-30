@@ -168,8 +168,8 @@ project/
 - Look for checkpoint/2FA on Instagram.com
 - Create a session file using instaloader CLI
 
-### Downloads over 50MB
-Bot limits downloads to 50MB to comply with Telegram's file size limits.
+### Downloads over 500MB
+Bot limits downloads to 500MB to comply with Telegram's file size limits.
 
 ## Security Best Practices
 

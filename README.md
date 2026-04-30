@@ -27,7 +27,7 @@ readme_content = """<div align="center">
 
 | Platform | Status | Quality |
 |----------|--------|---------|
-| 🎬 **YouTube** | ✅ Working | Best < 50MB |
+| 🎬 **YouTube** | ✅ Working | Best < 500MB |
 | 🎵 **YouTube MP3** | ✅ Working | 128kbps |
 | 📸 **Instagram** | ✅ Working | Posts & Reels |
 | 🐦 **Twitter/X** | ✅ Working | HD Video |
@@ -38,7 +38,7 @@ readme_content = """<div align="center">
 
 **Smart Features:**
 - ✅ Auto-detects platform from URL
-- ✅ 50MB size limit for Telegram
+- ✅ 500MB size limit for Telegram
 - ✅ Auto-cleanup of downloaded files
 - ✅ Unique download directory per user
 - ✅ Friendly Hinglish messages
@@ -399,7 +399,7 @@ rm -rf dl_*
 ### Downloads failing
 - URL might be private/protected
 - Instagram requires cookies for some posts (not implemented yet)
-- Video might be >50MB (Telegram limit)
+- Video might be >500MB (Telegram limit)
 - Platform might have changed their API
 
 ### "Forbidden: bot was blocked by the user"
