@@ -791,15 +791,24 @@ def cleanup(path: str):
 
 def _compress_video(input_path: str, output_path: str):
     """Compress video using ffmpeg to reduce file size while maintaining decent quality."""
-    ffmpeg_bin = shutil.which('ffmpeg') or '/usr/bin/ffmpeg'
-    if not os.path.exists(ffmpeg_bin):
-        for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+    ffmpeg_bin = shutil.which('ffmpeg')
+    if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+        for p in ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg']:
             if os.path.exists(p):
                 ffmpeg_bin = p
                 break
     
+    if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+        print("❌ Compression aborted: FFmpeg not found.")
+        return False
+
+    if not os.path.exists(input_path):
+        print(f"❌ Compression aborted: Input file not found: {input_path}")
+        return False
+
     # Use libx264 with CRF 28 (good balance) and faster preset
     # We also ensure the resolution is scaled to max 720p to keep size down
+    # Simplified scale filter for better compatibility
     cmd = [
         ffmpeg_bin, '-y', '-i', input_path,
         '-vcodec', 'libx264', '-crf', '28', '-preset', 'faster',
@@ -807,8 +816,23 @@ def _compress_video(input_path: str, output_path: str):
         '-acodec', 'aac', '-b:a', '128k',
         output_path
     ]
+    
     import subprocess
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        print(f"🎬 Starting compression: {input_path}")
+        # Add a timeout of 300 seconds (5 minutes) to prevent hanging
+        process = subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=300)
+        return os.path.exists(output_path)
+    except subprocess.TimeoutExpired:
+        print(f"⚠️ Compression timed out after 300s: {input_path}")
+        return False
+    except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.decode(errors="ignore").strip() if e.stderr else "Unknown error"
+        print(f"❌ FFmpeg compression failed: {err_msg}")
+        return False
+    except Exception as e:
+        print(f"❌ Unexpected compression error: {e}")
+        return False
 
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
@@ -1039,14 +1063,19 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             try:
                 await status_msg.edit_text("⚙️ *Optimizing Video for Telegram...* 🛠️", parse_mode="Markdown")
-                await asyncio.to_thread(_compress_video, file_path, compressed_path)
-                if os.path.exists(compressed_path):
+                success = await asyncio.to_thread(_compress_video, file_path, compressed_path)
+                
+                if success and os.path.exists(compressed_path):
                     new_size = os.path.getsize(compressed_path)
                     if new_size < original_size:
                         file_path = compressed_path
                         print(f"✅ Compression: {original_size} -> {new_size}")
+                    else:
+                        print("ℹ️ Compressed file is larger; using original.")
+                else:
+                    print("⚠️ Compression failed or produced no file; using original.")
             except Exception as ce:
-                print(f"⚠️ Compression failed: {ce}")
+                print(f"⚠️ Compression step encountered an error: {ce}")
             
             if os.path.getsize(file_path) <= 500 * 1024 * 1024:
                 await status_msg.edit_text("📤 *Uploading Video...*", parse_mode="Markdown")
