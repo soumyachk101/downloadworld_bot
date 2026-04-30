@@ -789,6 +789,27 @@ def cleanup(path: str):
     except Exception as e:
         print(f"Cleanup Error: {e}")
 
+def _compress_video(input_path: str, output_path: str):
+    """Compress video using ffmpeg to reduce file size while maintaining decent quality."""
+    ffmpeg_bin = shutil.which('ffmpeg') or '/usr/bin/ffmpeg'
+    if not os.path.exists(ffmpeg_bin):
+        for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+            if os.path.exists(p):
+                ffmpeg_bin = p
+                break
+    
+    # Use libx264 with CRF 28 (good balance) and faster preset
+    # We also ensure the resolution is scaled to max 720p to keep size down
+    cmd = [
+        ffmpeg_bin, '-y', '-i', input_path,
+        '-vcodec', 'libx264', '-crf', '28', '-preset', 'faster',
+        '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'",
+        '-acodec', 'aac', '-b:a', '128k',
+        output_path
+    ]
+    import subprocess
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
 # ─── Progress Hook Helper ───────────────────────────────────────────────────
@@ -1012,10 +1033,29 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_path = _find_largest_video_file(download_dir)
 
         if file_path and os.path.exists(file_path):
+            # Compress video if requested or if it's large
+            original_size = os.path.getsize(file_path)
+            compressed_path = os.path.splitext(file_path)[0] + "_compressed.mp4"
+            
+            try:
+                await status_msg.edit_text("⚙️ *Optimizing Video for Telegram...* 🛠️", parse_mode="Markdown")
+                await asyncio.to_thread(_compress_video, file_path, compressed_path)
+                if os.path.exists(compressed_path):
+                    new_size = os.path.getsize(compressed_path)
+                    if new_size < original_size:
+                        file_path = compressed_path
+                        print(f"✅ Compression: {original_size} -> {new_size}")
+            except Exception as ce:
+                print(f"⚠️ Compression failed: {ce}")
+            
             if os.path.getsize(file_path) <= 500 * 1024 * 1024:
                 await status_msg.edit_text("📤 *Uploading Video...*", parse_mode="Markdown")
                 with open(file_path, 'rb') as video:
-                    await source_msg.reply_video(video, caption="Your video is ready! 🎬")
+                    await source_msg.reply_video(
+                        video, 
+                        caption="Your video is ready! 🎬",
+                        supports_streaming=True
+                    )
                 track_download(user.id)
                 await status_msg.delete()
             else:
