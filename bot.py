@@ -67,8 +67,8 @@ if TELEGRAM_STREAMING_LIMIT_MB > TELEGRAM_MAX_UPLOAD_MB:
 TELEGRAM_STREAMING_LIMIT_BYTES = TELEGRAM_STREAMING_LIMIT_MB * 1024 * 1024
 TELEGRAM_MAX_UPLOAD_BYTES = TELEGRAM_MAX_UPLOAD_MB * 1024 * 1024
 
-LARGE_AUDIO_DOCUMENT_MESSAGE = "📦 *Audio bada hai — file ke roop mein bhej raha...*"
-LARGE_VIDEO_DOCUMENT_MESSAGE = "📦 *Video bada hai — file ke roop mein bhej raha...*"
+LARGE_AUDIO_DOCUMENT_MESSAGE = "📦 *Audio bada hai - file ke roop mein bhej raha...*"
+LARGE_VIDEO_DOCUMENT_MESSAGE = "📦 *Video bada hai - file ke roop mein bhej raha...*"
 
 # ─── Groq Client ─────────────────────────────────────────────────────────────
 groq_client = None
@@ -1173,7 +1173,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await status_msg.edit_text("📤 *Uploading Video...* (This may take a while)", parse_mode="Markdown")
                         with open(file_path, 'rb') as video:
                             await source_msg.reply_video(
-                                video, 
+                                video,
                                 caption="Your video is ready! 🎬",
                                 supports_streaming=True,
                                 write_timeout=600,
