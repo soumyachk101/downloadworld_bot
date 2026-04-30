@@ -806,12 +806,12 @@ def _compress_video(input_path: str, output_path: str):
         print(f"❌ Compression aborted: Input file not found: {input_path}")
         return False
 
-    # Use libx264 with CRF 28 (good balance) and faster preset
-    # We also ensure the resolution is scaled to max 720p to keep size down
-    # Simplified scale filter for better compatibility
+    # Use libx264 with CRF 28 and ultrafast preset to save memory/time
+    # Limit threads to 1 to prevent memory spikes in small containers
     cmd = [
         ffmpeg_bin, '-y', '-i', input_path,
-        '-vcodec', 'libx264', '-crf', '28', '-preset', 'faster',
+        '-vcodec', 'libx264', '-crf', '28', '-preset', 'ultrafast',
+        '-threads', '1', 
         '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'",
         '-acodec', 'aac', '-b:a', '128k',
         output_path
@@ -1078,15 +1078,23 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(f"⚠️ Compression step encountered an error: {ce}")
             
             if os.path.getsize(file_path) <= 500 * 1024 * 1024:
-                await status_msg.edit_text("📤 *Uploading Video...*", parse_mode="Markdown")
-                with open(file_path, 'rb') as video:
-                    await source_msg.reply_video(
-                        video, 
-                        caption="Your video is ready! 🎬",
-                        supports_streaming=True
-                    )
-                track_download(user.id)
-                await status_msg.delete()
+                await status_msg.edit_text("📤 *Uploading Video...* (This may take a while)", parse_mode="Markdown")
+                try:
+                    with open(file_path, 'rb') as video:
+                        await source_msg.reply_video(
+                            video, 
+                            caption="Your video is ready! 🎬",
+                            supports_streaming=True,
+                            write_timeout=600,
+                            read_timeout=600,
+                            connect_timeout=600,
+                            pool_timeout=600
+                        )
+                    track_download(user.id)
+                    await status_msg.delete()
+                except Exception as upload_err:
+                    print(f"❌ Upload failed: {upload_err}")
+                    await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{upload_err}`", parse_mode="Markdown")
             else:
                 await status_msg.edit_text("❌ *Bhai video 500MB se badi hai!* 😔", parse_mode="Markdown")
         else:
