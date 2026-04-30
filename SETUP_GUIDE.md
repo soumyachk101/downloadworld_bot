@@ -122,9 +122,11 @@ python setup_assistant.py
 ### Optional:
 - `INSTA_USERNAME`: Instagram username (for private posts)
 - `INSTA_PASSWORD`: Instagram password (for private posts) - prefer session file or cookies
-- `INSTAGRAM_COOKIES_FILE`: Path to Instagram cookies.txt file (byass checkpoint issues, great for containers)
+- `INSTAGRAM_COOKIES_FILE`: Path to Instagram cookies.txt file (bypass checkpoint issues, great for containers)
 - `YOUTUBE_COOKIES_FILE`: Path to cookies.txt file for YouTube
 - `YOUTUBE_EXTRACTOR_ARGS`: yt-dlp extractor arguments (alternative to cookies), e.g. `"youtube:player_skip=webpage,configs;visitor_data=VISITOR_DATA"`
+- `TELEGRAM_STREAMING_LIMIT_MB`: Size (MB) above which media is sent as document (default: 50)
+- `TELEGRAM_MAX_UPLOAD_MB`: Max file size (MB) bot will attempt to send (default: 500)
 
 ## File Structure
 ```
@@ -169,7 +171,7 @@ project/
 - Create a session file using instaloader CLI
 
 ### Downloads over 50MB
-Bot limits downloads to 50MB to comply with Telegram's file size limits.
+Bot sends files above 50MB as documents and supports up to 500MB downloads.
 
 ## Security Best Practices
 

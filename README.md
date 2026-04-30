@@ -27,7 +27,7 @@ readme_content = """<div align="center">
 
 | Platform | Status | Quality |
 |----------|--------|---------|
-| 🎬 **YouTube** | ✅ Working | Best < 50MB |
+| 🎬 **YouTube** | ✅ Working | Best < 500MB (large files sent as file) |
 | 🎵 **YouTube MP3** | ✅ Working | 128kbps |
 | 📸 **Instagram** | ✅ Working | Posts & Reels |
 | 🐦 **Twitter/X** | ✅ Working | HD Video |
@@ -38,7 +38,7 @@ readme_content = """<div align="center">
 
 **Smart Features:**
 - ✅ Auto-detects platform from URL
-- ✅ 50MB size limit for Telegram
+- ✅ Large files supported (sent as file above 50MB)
 - ✅ Auto-cleanup of downloaded files
 - ✅ Unique download directory per user
 - ✅ Friendly Hinglish messages
@@ -366,6 +366,8 @@ All errors logged to console for debugging.
 |----------|----------|-------------|
 | `BOT_TOKEN` | Yes | Telegram bot token from @BotFather |
 | `GROQ_API_KEY` | No | Groq API key for AI features (optional but recommended) |
+| `TELEGRAM_STREAMING_LIMIT_MB` | No | Size (MB) above which media is sent as a document (default: 50) |
+| `TELEGRAM_MAX_UPLOAD_MB` | No | Maximum file size (MB) the bot will attempt to send (default: 500) |
 
 If `GROQ_API_KEY` is not set, AI features will show error message.
 
@@ -399,7 +401,7 @@ rm -rf dl_*
 ### Downloads failing
 - URL might be private/protected
 - Instagram requires cookies for some posts (not implemented yet)
-- Video might be >50MB (Telegram limit)
+- Video might be >500MB (bot limit)
 - Platform might have changed their API
 
 ### "Forbidden: bot was blocked by the user"
