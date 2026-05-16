@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: everything-downloader-bot
+    env: docker
+    plan: free
+    region: ohio
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PORT
+        value: 10000
+      - key: YOUTUBE_COOKIES_FILE
+        value: youtube_cookies.txt
+      - key: INSTAGRAM_COOKIES_FILE
+        value: instagram_cookies.txt
+    autoDeploy: true

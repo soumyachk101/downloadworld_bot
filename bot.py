@@ -4,6 +4,8 @@ import glob
 import asyncio
 import shutil
 import sys
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 
 # Fix for Windows console encoding
@@ -1575,8 +1577,26 @@ async def post_init(application: Application):
         scheduler.start()
     print("✅ Bot ready — scheduler started, instaloader configured.")
 
+# ─── Health Check Server ──────────────────────────────────────────────────────
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+    def log_message(self, format, *args):
+        return # Quiet logs
+
+def run_health_check():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    print(f"✅ Health check server running on port {port}")
+    server.serve_forever()
 
 def main():
+    # Start health check server in background
+    threading.Thread(target=run_health_check, daemon=True).start()
+
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:

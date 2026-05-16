@@ -237,6 +237,24 @@ python bot.py
 
 The bot will start polling and be ready to respond!
 
+## ☁️ Deploy to Render (Recommended)
+
+Render is a great alternative to Railway with a generous free tier.
+
+### Step 1: Push to GitHub
+Ensure your code is pushed to a GitHub repository.
+
+### Step 2: Deploy to Render
+1. Go to [dashboard.render.com](https://dashboard.render.com) and log in.
+2. Click **"New +"** and select **"Blueprint"**.
+### Step 4: Add Environment Variables
+Ensure the following are set in the **Environment** tab:
+- `BOT_TOKEN`: Your Telegram bot token.
+- `GROQ_API_KEY`: Your Groq API key.
+
+### ✅ Done!
+Your bot will now be live on Render. The included health check server ensures it passes Render's connectivity tests.
+
 ## ☁️ Deploy to Railway
 
 Railway provides **free hosting** perfect for Telegram bots.
