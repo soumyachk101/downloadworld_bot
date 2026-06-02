@@ -204,39 +204,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Escape markdown special characters in first_name
     clean_name = re.sub(r'[*_`]', '', first_name)
     welcome_text = (
-        f"╭━━━━━━━━━━━━━━━━━━━╮\n"
-        f"  ⚡ *EVERYTHING DOWNLOADER* ⚡\n"
-        f"╰━━━━━━━━━━━━━━━━━━━╯\n\n"
-        f"👋 *Hey {clean_name}!*\n"
-        f"_Your one-stop media downloader_ 🎬\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌟 *WHAT I CAN DO*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🎬  HD Video downloads\n"
-        f"🎵  MP3 / Audio extraction\n"
-        f"🔍  YouTube search engine\n"
-        f"🤖  AI fun modes (Roast • Rap • Shayari)\n"
-        f"🌐  Instant translation\n"
-        f"⏰  Smart reminders\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ *QUICK START*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 Paste any link → pick format\n"
-        f"📌 `/search <query>` → find YT videos\n"
-        f"📌 Tap buttons below to explore\n\n"
-        f"_Supports: YouTube • Instagram • Facebook • Twitter • TikTok_"
+        f"🌌 *───────────────────────*\n"
+        f"      ⚡ *EVERYTHING DOWNLOADER* ⚡\n"
+        f"🌌 *───────────────────────*\n\n"
+        f"👋 *Hey {clean_name}! Welcome to the party!*\n"
+        f"I am your ultimate media companion. Just send me any link, and I will fetch it for you! 🪄\n\n"
+        f"🌟 *WHAT I CAN DO FOR YOU:*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎬 *HD Video Downloads* (MP4)\n"
+        f"🎵 *Audio Extraction* (MP3)\n"
+        f"🖼️ *Hi-Res Thumbnails* (`/thumb`)\n"
+        f"📝 *Subtitles / Caption SRTs* (`/subs`)\n"
+        f"🎞️ *Animated GIFs (8s clips)* (`/gif`)\n"
+        f"🔍 *YouTube Search Engine* (`/search`)\n"
+        f"🤖 *AI Fun Zone* (Roast, Shayari, Rap)\n"
+        f"🌐 *Hindi Translation* (`/tr`)\n"
+        f"⏰ *Smart Task Reminders* (`/remind`)\n\n"
+        f"⚡ *QUICK START:*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"1️⃣ Paste any link directly in the chat.\n"
+        f"2️⃣ Tap the format you want.\n"
+        f"3️⃣ Boom! File delivered directly to you. 🚀\n\n"
+        f"📌 *Supported Platforms:* YouTube, Instagram, Facebook, Twitter (X), TikTok, and more!\n\n"
+        f"_Tap the buttons below to begin exploring!_ 👇"
     )
     keyboard = [
         [
-            InlineKeyboardButton("🎬 Download", callback_data="show_help"),
-            InlineKeyboardButton("🤖 AI Modes", callback_data="show_ai_modes"),
+            InlineKeyboardButton("🎬 Download Commands", callback_data="show_help"),
+            InlineKeyboardButton("🤖 AI Fun Zone", callback_data="show_ai_modes"),
         ],
         [
             InlineKeyboardButton("📊 My Stats", callback_data="show_stats"),
-            InlineKeyboardButton("📖 Help", callback_data="show_help"),
-        ],
-        [
-            InlineKeyboardButton("⭐ Rate Bot", url="https://t.me/share/url?url=Check%20out%20Everything%20Downloader%20Bot!"),
+            InlineKeyboardButton("⭐ Share / Rate Bot", url="https://t.me/share/url?url=Check%20out%20Everything%20Downloader%20Bot!"),
         ],
     ]
     if update.callback_query:
@@ -1482,13 +1481,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     urls = re.findall(URL_PATTERN, user_text)
     if not urls:
-        # If no URL and no mode, show a professional help prompt
         await update.message.reply_text(
-            "👋 *Welcome to Everything Downloader!*\n\n"
-            "To download something, please use the following commands:\n"
-            "• `/mp4 <link>` - Download Video (MP4)\n"
-            "• `/mp3 <link>` - Download Audio (MP3)\n\n"
-            "Supported: YouTube, Instagram, FB, Twitter (X), etc.",
+            "🔮 *Oops! Koi link nahi mila...*\n\n"
+            "Bhai, download karne ke liye directly koi link paste karo ya in commands ko check karo:\n"
+            "🎬 `/mp4 <link>` — Download Video\n"
+            "🎵 `/mp3 <link>` — Download Audio\n"
+            "🔍 `/search <query>` — Search YouTube\n\n"
+            "💡 *Tip:* Send `/start` to open the main dashboard menu! 🚀",
             parse_mode="Markdown"
         )
         return
