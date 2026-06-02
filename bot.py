@@ -15,6 +15,9 @@ if sys.platform == "win32":
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji
 from telegram.constants import ChatAction
+# Fallback for deprecated UPLOAD_AUDIO in python-telegram-bot v20+
+if not hasattr(ChatAction, "UPLOAD_AUDIO"):
+    ChatAction.UPLOAD_AUDIO = ChatAction.UPLOAD_VOICE
 from telegram.error import BadRequest
 from telegram.ext import (
     Application,
