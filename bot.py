@@ -3240,21 +3240,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as re_err:
         print(f"Failed to set message reaction: {re_err}")
 
-    import uuid
-    link_id = str(uuid.uuid4())[:8]
-    context.user_data.setdefault("links", {})[link_id] = url
+    context.args = [url]
     
-    keyboard = [
-        [
-            InlineKeyboardButton("🎬 Video (MP4)", callback_data=f"dl_mp4:{link_id}"),
-            InlineKeyboardButton("🎵 Audio (MP3)", callback_data=f"dl_mp3:{link_id}")
-        ]
-    ]
-    await update.message.reply_text(
-        "✨ *Link Detected!*\n\nWhat would you like to do with this link?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
-    )
+    # Automatically download and send both video (MP4) and audio (MP3)
+    try:
+        await mp4_command(update, context)
+    except Exception as e:
+        print(f"Error in automatic MP4 download: {e}")
+        
+    try:
+        await mp3_command(update, context)
+    except Exception as e:
+        print(f"Error in automatic MP3 download: {e}")
 
 async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _safe_answer_callback(update):
