@@ -1644,12 +1644,29 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai username toh batao!*\n\nExample: `/iginfo instagram`",
+            "❌ *Bhai username ya link toh batao!*\n\n"
+            "Format:\n"
+            "• `/iginfo <username>`\n"
+            "• `/iginfo <profile_link>`\n\n"
+            "Example: `/iginfo instagram`",
             parse_mode="Markdown"
         )
         return
 
-    username = context.args[0].replace("@", "").strip()
+    raw_input = context.args[0].strip()
+    
+    # If the user pasted a full profile link, extract the username
+    if "instagram.com" in raw_input:
+        match = re.search(r'instagram\.com/([A-Za-z0-9_\.]+)', raw_input)
+        if match:
+            username = match.group(1)
+        else:
+            username = raw_input
+    else:
+        username = raw_input
+
+    username = username.replace("@", "").strip()
+    
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     download_dir = f"downloads_iginfo_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
@@ -1697,6 +1714,28 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         track_download(user.id)
 
+    except instaloader.exceptions.ProfileNotExistsException:
+        await source_msg.reply_text(
+            f"❌ *Bhai yeh Instagram profile exist nahi karti!*\n\n"
+            f"Aapne diya: `{username}`. Please check if the username is correct.",
+            parse_mode="Markdown"
+        )
+    except instaloader.exceptions.LoginRequiredException:
+        await source_msg.reply_text(
+            "🔒 *Instagram Login Required!*\n\n"
+            "Bhai, Instagram checks require active account session. Please add "
+            "`INSTA_USERNAME` & `INSTA_PASSWORD` or `INSTAGRAM_COOKIES_FILE` in your "
+            "`.env` (Railway Dashboard) to enable this feature!",
+            parse_mode="Markdown"
+        )
+    except instaloader.exceptions.ConnectionException as conn_err:
+        print(f"Instagram Connection Error: {conn_err}")
+        await source_msg.reply_text(
+            "⚠️ *Instagram Connection Limit / Rate Limit (429)!*\n\n"
+            "Bhai, Instagram has blocked anonymous requests temporarily. "
+            "Please configure your login details or try again later.",
+            parse_mode="Markdown"
+        )
     except Exception as e:
         print(f"Instagram Info Error: {e}")
         await source_msg.reply_text(f"❌ *Bhai details nahi nikal paye:* `{e}`", parse_mode="Markdown")
