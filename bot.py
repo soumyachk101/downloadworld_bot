@@ -1500,7 +1500,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.set_message_reaction(
             chat_id=update.effective_chat.id,
             message_id=update.message.message_id,
-            reaction=[ReactionTypeEmoji("👍")]
+            reaction=[ReactionTypeEmoji("👀")]
         )
     except Exception as re_err:
         print(f"Failed to set message reaction: {re_err}")
