@@ -13,7 +13,8 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji
+from telegram.constants import ChatAction
 from telegram.error import BadRequest
 from telegram.ext import (
     Application,
@@ -23,6 +24,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+
 
 import yt_dlp
 import instaloader
@@ -846,39 +848,47 @@ def get_progress_bar(percentage):
     bar = "█" * filled_length + "░" * (10 - filled_length)
     return f"|{bar}| {percentage}%"
 
-def progress_hook_factory(loop, bot, chat_id, message_id):
-    """Creates a hook to update the progress in Telegram safely across threads."""
+def progress_hook_factory(loop, bot, chat_id, message_id=None, action=ChatAction.TYPING):
+    """Creates a hook to update the progress in Telegram safely across threads using ChatAction."""
     last_update_time = 0
 
     def hook(d):
         nonlocal last_update_time
         if d['status'] == 'downloading':
-            # Update only every 3 seconds to be safe
+            # Update/Send action only every 4 seconds to avoid rate limits
             import time
             current_time = time.time()
-            if current_time - last_update_time > 3:
+            if current_time - last_update_time > 4:
                 last_update_time = current_time
-                p = d.get('_percent_str', '0%').replace('%', '').strip()
-                try:
-                    percent = float(p)
-                except:
-                    percent = 0
-                
-                bar = get_progress_bar(percent)
-                speed = d.get('_speed_str', 'N/A')
-                eta = d.get('_eta_str', 'N/A')
-                text = f"🚀 *Downloading...*\n\n{bar}\n\n⚡ Speed: `{speed}`\n⏳ ETA: `{eta}`"
-                
-                # Safely schedule the update in the main event loop
+                if message_id is not None:
+                    p = d.get('_percent_str', '0%').replace('%', '').strip()
+                    try:
+                        percent = float(p)
+                    except:
+                        percent = 0
+                    
+                    bar = get_progress_bar(percent)
+                    speed = d.get('_speed_str', 'N/A')
+                    eta = d.get('_eta_str', 'N/A')
+                    text = f"🚀 *Downloading...*\n\n{bar}\n\n⚡ Speed: `{speed}`\n⏳ ETA: `{eta}`"
+                    
+                    # Safely schedule the update in the main event loop
+                    asyncio.run_coroutine_threadsafe(
+                        bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="Markdown"),
+                        loop
+                    )
+                else:
+                    # Send chat action instead of editing status message
+                    asyncio.run_coroutine_threadsafe(
+                        bot.send_chat_action(chat_id=chat_id, action=action),
+                        loop
+                    )
+        elif d['status'] == 'finished':
+            if message_id is not None:
                 asyncio.run_coroutine_threadsafe(
-                    bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, parse_mode="Markdown"),
+                    bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="✅ Download Finished! Processing... 🛠️"),
                     loop
                 )
-        elif d['status'] == 'finished':
-            asyncio.run_coroutine_threadsafe(
-                bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="✅ Download Finished! Processing... 🛠️"),
-                loop
-            )
 
     return hook
 
@@ -896,13 +906,13 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = context.args[0]
-    status_msg = await source_msg.reply_text("⏳ *Initializing MP3 request...*", parse_mode="Markdown")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     download_dir = f"downloads_mp3_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
     try:
         loop = asyncio.get_running_loop()
-        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
+        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
         
         file_path = None
         is_instagram = "instagram.com" in url
@@ -992,22 +1002,21 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 mp3_files = [audio_candidates[0]]
 
             if not mp3_files:
-                await status_msg.edit_text("❌ *Bhai MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Bhai MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
                 return
 
         file_path = mp3_files[0]
         if os.path.getsize(file_path) <= 500 * 1024 * 1024:
-            await status_msg.edit_text("📤 *Uploading Audio...*", parse_mode="Markdown")
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_AUDIO)
             with open(file_path, 'rb') as audio:
                 await source_msg.reply_audio(audio, caption="Enjoy your music! 🎵")
             track_download(user.id)
-            await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ *Bhai audio 500MB se badi hai!* 😔", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Bhai audio 500MB se badi hai!* 😔", parse_mode="Markdown")
 
     except Exception as e:
         print(f"MP3 Error: {e}")
-        await status_msg.edit_text("❌ *Bhai error aagaya MP3 banane mein.* 🙏", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Bhai error aagaya MP3 banane mein.* 🙏", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1024,13 +1033,13 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = context.args[0]
-    status_msg = await source_msg.reply_text("⏳ *Initializing Video request...*", parse_mode="Markdown")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     download_dir = f"downloads_mp4_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
     try:
         loop = asyncio.get_running_loop()
-        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
+        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
         
         file_path = None
         is_instagram = "instagram.com" in url
@@ -1064,7 +1073,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             compressed_path = os.path.splitext(file_path)[0] + "_compressed.mp4"
             
             try:
-                await status_msg.edit_text("⚙️ *Optimizing Video for Telegram...* 🛠️", parse_mode="Markdown")
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
                 success = await asyncio.to_thread(_compress_video, file_path, compressed_path)
                 
                 if success and os.path.exists(compressed_path):
@@ -1080,7 +1089,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(f"⚠️ Compression step encountered an error: {ce}")
             
             if os.path.getsize(file_path) <= 500 * 1024 * 1024:
-                await status_msg.edit_text("📤 *Uploading Video...* (This may take a while)", parse_mode="Markdown")
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
                 try:
                     with open(file_path, 'rb') as video:
                         await source_msg.reply_video(
@@ -1093,18 +1102,17 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             pool_timeout=600
                         )
                     track_download(user.id)
-                    await status_msg.delete()
                 except Exception as upload_err:
                     print(f"❌ Upload failed: {upload_err}")
-                    await status_msg.edit_text(f"❌ *Bhai upload fail ho gaya:* `{upload_err}`", parse_mode="Markdown")
+                    await source_msg.reply_text(f"❌ *Bhai upload fail ho gaya:* `{upload_err}`", parse_mode="Markdown")
             else:
-                await status_msg.edit_text("❌ *Bhai video 500MB se badi hai!* 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Bhai video 500MB se badi hai!* 😔", parse_mode="Markdown")
         else:
-            await status_msg.edit_text("❌ *Bhai file nahi mili download ke baad.* 😔", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Bhai file nahi mili download ke baad.* 😔", parse_mode="Markdown")
 
     except Exception as e:
         print(f"MP4 Error: {e}")
-        await status_msg.edit_text("❌ *Bhai error aagaya video download karne mein.* 🙏", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Bhai error aagaya video download karne mein.* 🙏", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1164,7 +1172,7 @@ async def thumb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = context.args[0]
-    status_msg = await source_msg.reply_text("🖼️ *Fetching thumbnail...*", parse_mode="Markdown")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     download_dir = f"downloads_thumb_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
@@ -1173,14 +1181,13 @@ async def thumb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not file_path or not os.path.exists(file_path):
             raise RuntimeError("Thumbnail file missing after download.")
 
-        await status_msg.edit_text("📤 *Uploading thumbnail...*", parse_mode="Markdown")
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
         with open(file_path, 'rb') as photo:
             await source_msg.reply_photo(photo, caption="🖼️ Hi-res thumbnail")
         track_download(user.id)
-        await status_msg.delete()
     except Exception as e:
         print(f"Thumb Error: {e}")
-        await status_msg.edit_text("❌ *Thumbnail nahi mili. Link check kar!* 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Thumbnail nahi mili. Link check kar!* 😔", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1234,21 +1241,20 @@ async def subs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = context.args[0]
     lang = context.args[1] if len(context.args) > 1 else 'en'
-    status_msg = await source_msg.reply_text(f"📝 *Fetching subtitles ({lang})...*", parse_mode="Markdown")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     download_dir = f"downloads_subs_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
     try:
         sub_path = await asyncio.to_thread(_download_subtitles, url, download_dir, lang)
-        await status_msg.edit_text("📤 *Uploading subtitle file...*", parse_mode="Markdown")
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_DOCUMENT)
         with open(sub_path, 'rb') as f:
             await source_msg.reply_document(f, caption=f"📝 Subtitles ({lang})")
         track_download(user.id)
-        await status_msg.delete()
     except Exception as e:
         print(f"Subs Error: {e}")
         msg = "❌ *Is video pe subtitles nahi hain.* 😔" if "No subtitles" in str(e) else "❌ *Subtitle nahi mili.* 🙏"
-        await status_msg.edit_text(msg, parse_mode="Markdown")
+        await source_msg.reply_text(msg, parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1301,13 +1307,13 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = context.args[0]
-    status_msg = await source_msg.reply_text("🎞️ *Downloading clip for GIF...*", parse_mode="Markdown")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     download_dir = f"downloads_gif_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
     try:
         loop = asyncio.get_running_loop()
-        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, status_msg.message_id)
+        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
 
         is_instagram = "instagram.com" in url
         cookies_for_url = (
@@ -1319,17 +1325,17 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not video_path:
             raise RuntimeError("Video file missing after download.")
 
-        await status_msg.edit_text("⚙️ *Converting to GIF (8 sec, 480p, 15fps)...*", parse_mode="Markdown")
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
         gif_path = os.path.splitext(video_path)[0] + ".gif"
         await asyncio.to_thread(_video_to_gif, video_path, gif_path, 8, 480)
 
         if not os.path.exists(gif_path):
             raise RuntimeError("GIF conversion produced no file.")
         if os.path.getsize(gif_path) > 500 * 1024 * 1024:
-            await status_msg.edit_text("❌ *GIF 500MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *GIF 500MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
             return
 
-        await status_msg.edit_text("📤 *Uploading GIF...*", parse_mode="Markdown")
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
         with open(gif_path, 'rb') as f:
             # send_animation gives Telegram's looping GIF player
             await context.bot.send_animation(
@@ -1339,10 +1345,9 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption="🎞️ Your GIF is ready!",
             )
         track_download(user.id)
-        await status_msg.delete()
     except Exception as e:
         print(f"GIF Error: {e}")
-        await status_msg.edit_text("❌ *Bhai GIF nahi bani. Link/length check kar.* 🙏", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Bhai GIF nahi bani. Link/length check kar.* 🙏", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1489,6 +1494,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = urls[0]
+    
+    # React to the link message with an emoji
+    try:
+        await context.bot.set_message_reaction(
+            chat_id=update.effective_chat.id,
+            message_id=update.message.message_id,
+            reaction=[ReactionTypeEmoji("👍")]
+        )
+    except Exception as re_err:
+        print(f"Failed to set message reaction: {re_err}")
+
     import uuid
     link_id = str(uuid.uuid4())[:8]
     context.user_data.setdefault("links", {})[link_id] = url
