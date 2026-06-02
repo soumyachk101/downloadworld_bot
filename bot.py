@@ -191,6 +191,36 @@ def track_download(user_id):
     stats["users"][uid] += 1
     save_stats(stats)
 
+def extract_contact_info(text: str):
+    if not text:
+        return [], []
+    email_pattern = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
+    emails = email_pattern.findall(text)
+    
+    phone_pattern = re.compile(
+        r'(?:\+?\d{1,3}[-.\s]?)?'
+        r'(?:\(?\d{2,5}\)?[-.\s]?)?'
+        r'\d{3,5}[-.\s]?\d{3,5}[-.\s]?\d{3,5}'
+    )
+    phones_found = phone_pattern.findall(text)
+    
+    valid_phones = []
+    for ph in phones_found:
+        digits_only = re.sub(r'\D', '', ph)
+        if 8 <= len(digits_only) <= 15:
+            clean_ph = ph.strip()
+            clean_ph = re.sub(r'\s+', ' ', clean_ph)
+            if clean_ph not in valid_phones:
+                valid_phones.append(clean_ph)
+                
+    unique_emails = list(dict.fromkeys([e.lower().strip() for e in emails]))
+    return unique_emails, valid_phones
+
+def escape_ffmpeg_drawtext(text: str) -> str:
+    safe_text = text.replace("'", "`").replace('"', '`').replace(':', '\\:')
+    safe_text = safe_text.replace('\\', '\\\\')
+    return safe_text
+
 # ─── Scheduler ───────────────────────────────────────────────────────────────
 scheduler = AsyncIOScheduler()
 
@@ -1357,56 +1387,95 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     source_msg = update.effective_message
     user = update.effective_user
 
-    if not context.args:
-        await source_msg.reply_text(
-            "❌ *Bhai link toh bhej!*\n\n"
-            "Example: `/gif https://youtu.be/xxx`\n"
-            "Default: first 8 sec → animated GIF",
-            parse_mode="Markdown",
-        )
-        return
-
     if not shutil.which('ffmpeg'):
         await source_msg.reply_text("❌ *FFmpeg nahi mila — GIF nahi ban sakti.* 🙏", parse_mode="Markdown")
         return
 
-    url = context.args[0]
+    url = None
+    duration = 8
+    replied_video = None
+    
+    if context.args:
+        if context.args[0].startswith("http://") or context.args[0].startswith("https://"):
+            url = context.args[0]
+            if len(context.args) > 1:
+                try:
+                    duration = int(context.args[1])
+                except ValueError:
+                    pass
+        else:
+            try:
+                duration = int(context.args[0])
+            except ValueError:
+                pass
+
+    if not url:
+        if source_msg.reply_to_message:
+            reply = source_msg.reply_to_message
+            if reply.video:
+                replied_video = reply.video
+            elif reply.document and reply.document.mime_type and reply.document.mime_type.startswith("video/"):
+                replied_video = reply.document
+                
+        if not replied_video:
+            await source_msg.reply_text(
+                "❌ *Bhai usage check karo!*\n\n"
+                "• `/gif <link> [duration]`\n"
+                "• Reply to any video with `/gif [duration]`\n\n"
+                "Default duration: `8` seconds.",
+                parse_mode="Markdown"
+            )
+            return
+
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     download_dir = f"downloads_gif_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
     try:
-        loop = asyncio.get_running_loop()
-        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
-
-        is_instagram = "instagram.com" in url
-        cookies_for_url = (
-            _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE) if is_instagram else YOUTUBE_COOKIES_FILE
-        )
-        video_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
-        if not video_path or not os.path.exists(video_path):
-            video_path = _find_largest_video_file(download_dir)
-        if not video_path:
-            raise RuntimeError("Video file missing after download.")
+        input_file = None
+        if url:
+            loop = asyncio.get_running_loop()
+            hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
+            is_instagram = "instagram.com" in url
+            cookies_for_url = (
+                _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE) if is_instagram else YOUTUBE_COOKIES_FILE
+            )
+            video_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
+            if not video_path or not os.path.exists(video_path):
+                video_path = _find_largest_video_file(download_dir)
+            if not video_path:
+                raise RuntimeError("Failed to download video from the link.")
+            input_file = video_path
+        else:
+            if replied_video.file_size > 20 * 1024 * 1024:
+                await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+                return
+            
+            tg_file = await context.bot.get_file(replied_video.file_id)
+            ext = ".mp4"
+            if hasattr(replied_video, "file_name") and replied_video.file_name:
+                ext = os.path.splitext(replied_video.file_name)[1] or ".mp4"
+            
+            input_file = os.path.join(download_dir, f"input{ext}")
+            await tg_file.download_to_drive(input_file)
 
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        gif_path = os.path.splitext(video_path)[0] + ".gif"
-        await asyncio.to_thread(_video_to_gif, video_path, gif_path, 8, 480)
+        gif_path = os.path.splitext(input_file)[0] + ".gif"
+        await asyncio.to_thread(_video_to_gif, input_file, gif_path, duration, 480)
 
         if not os.path.exists(gif_path):
             raise RuntimeError("GIF conversion produced no file.")
-        if os.path.getsize(gif_path) > 500 * 1024 * 1024:
-            await source_msg.reply_text("❌ *GIF 500MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
+        if os.path.getsize(gif_path) > 50 * 1024 * 1024:
+            await source_msg.reply_text("❌ *GIF 50MB se badi ban gayi. Shorter clip try kar.* 😔", parse_mode="Markdown")
             return
 
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
         with open(gif_path, 'rb') as f:
-            # send_animation gives Telegram's looping GIF player
             await context.bot.send_animation(
                 chat_id=update.effective_chat.id,
                 animation=f,
                 reply_to_message_id=source_msg.message_id,
-                caption="🎞️ Your GIF is ready!",
+                caption=f"🎞️ Your GIF is ready! ({duration}s)",
             )
         track_download(user.id)
     except Exception as e:
@@ -1695,6 +1764,32 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_verified = "Yes ✅" if profile.is_verified else "No ❌"
         posts_count = profile.mediacount
 
+        # Extract contact info from biography
+        bio_emails, bio_phones = extract_contact_info(bio)
+        
+        # Check business attributes directly
+        biz_phone = getattr(profile, "business_phone_number", None)
+        biz_email = getattr(profile, "business_email", None)
+        biz_cat = getattr(profile, "business_category_name", None)
+        is_biz = getattr(profile, "is_business_account", False)
+
+        # Merge results
+        all_emails = []
+        if biz_email:
+            all_emails.append(biz_email.strip().lower())
+        if bio_emails:
+            for e in bio_emails:
+                if e not in all_emails:
+                    all_emails.append(e)
+
+        all_phones = []
+        if biz_phone:
+            all_phones.append(biz_phone.strip())
+        if bio_phones:
+            for p in bio_phones:
+                if p not in all_phones:
+                    all_phones.append(p)
+
         profile_pic_url = profile.profile_pic_url
         profile_pic_path = os.path.join(download_dir, "profile_pic.jpg")
 
@@ -1713,9 +1808,26 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👥 *Followers:* `{followers:,}`\n"
             f"👥 *Following:* `{following:,}`\n"
             f"📮 *Posts:* `{posts_count:,}`\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📝 *Bio:* __{bio}__"
         )
+
+        if is_biz:
+            category_str = f" ({biz_cat})" if biz_cat else ""
+            caption += f"💼 *Business Account:* Yes{category_str}\n"
+
+        caption += f"━━━━━━━━━━━━━━━━━━━━━\n"
+
+        # Add Contact Details if found
+        if all_emails or all_phones:
+            caption += f"📞 *Contact Details Found:*\n"
+            if all_phones:
+                phones_str = ", ".join([f"`{p}`" for p in all_phones])
+                caption += f"• *Phone(s):* {phones_str}\n"
+            if all_emails:
+                emails_str = ", ".join([f"`{e}`" for e in all_emails])
+                caption += f"• *Email(s):* {emails_str}\n"
+            caption += f"━━━━━━━━━━━━━━━━━━━━━\n"
+
+        caption += f"📝 *Bio:* __{bio}__" 
 
         if os.path.exists(profile_pic_path) and os.path.getsize(profile_pic_path) > 0:
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
@@ -1751,6 +1863,162 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Instagram Info Error: {e}")
         await source_msg.reply_text(f"❌ *Bhai details nahi nikal paye:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def extract_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    
+    text_to_parse = ""
+    if context.args:
+        text_to_parse = " ".join(context.args)
+    elif source_msg.reply_to_message:
+        reply = source_msg.reply_to_message
+        if reply.text:
+            text_to_parse = reply.text
+        elif reply.caption:
+            text_to_parse = reply.caption
+            
+    if not text_to_parse:
+        await source_msg.reply_text(
+            "❌ *Bhai usage check karo!*\n\n"
+            "Format:\n"
+            "• `/extract <text>`\n"
+            "• Reply to a text message with `/extract`",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Extract info
+    emails, phones = extract_contact_info(text_to_parse)
+    
+    # Social handles
+    handles = re.findall(r'(?<!\w)@([a-zA-Z0-9_]{3,30})', text_to_parse)
+    unique_handles = list(dict.fromkeys(handles))
+    
+    # URLs
+    urls = re.findall(r'https?://[^\s]+', text_to_parse)
+    clean_urls = []
+    for u in urls:
+        u_clean = u.rstrip('.,;)"\'?]')
+        if u_clean not in clean_urls:
+            clean_urls.append(u_clean)
+
+    if not emails and not phones and not unique_handles and not clean_urls:
+        await source_msg.reply_text("❌ *Bhai is text mein koi details (phone, email, handles, URLs) nahi mile!*", parse_mode="Markdown")
+        return
+
+    result = "🔎 *Extracted Details:*\n━━━━━━━━━━━━━━━━━━━━━\n"
+    if phones:
+        result += "📞 *Mobile / Phone Numbers:*\n"
+        result += "\n".join([f"• `{p}`" for p in phones]) + "\n\n"
+    if emails:
+        result += "✉️ *Email & Addresses:*\n"
+        result += "\n".join([f"• `{e}`" for e in emails]) + "\n\n"
+    if unique_handles:
+        result += "👤 *Social Handles:*\n"
+        result += "\n".join([f"• @{h}" for h in unique_handles]) + "\n\n"
+    if clean_urls:
+        result += "🌐 *URLs / Links:*\n"
+        result += "\n".join([f"• {u}" for u in clean_urls]) + "\n\n"
+        
+    result += "━━━━━━━━━━━━━━━━━━━━━"
+    await source_msg.reply_text(result, parse_mode="Markdown", disable_web_page_preview=True)
+
+
+async def transcribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not groq_client:
+        await source_msg.reply_text("❌ *Bhai GROQ_API_KEY missing hai!* AI features disabled. Please add it to your environment variables. 🙏", parse_mode="Markdown")
+        return
+
+    if not source_msg.reply_to_message:
+        await source_msg.reply_text(
+            "❌ *Bhai usage check karo!*\n\n"
+            "Reply to any audio or voice note file with `/transcribe` to extract text!",
+            parse_mode="Markdown"
+        )
+        return
+
+    reply = source_msg.reply_to_message
+    target_media = None
+    media_type = None
+
+    if reply.audio:
+        target_media = reply.audio
+        media_type = "audio"
+    elif reply.voice:
+        target_media = reply.voice
+        media_type = "voice"
+    elif reply.document:
+        mime = reply.document.mime_type or ""
+        if mime.startswith("audio/"):
+            target_media = reply.document
+            media_type = "audio"
+
+    if not target_media:
+        await source_msg.reply_text("❌ *Bhai kisi audio ya voice note file ko reply karo!*", parse_mode="Markdown")
+        return
+
+    if target_media.file_size > 20 * 1024 * 1024:
+        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        return
+
+    try:
+        await context.bot.set_message_reaction(
+            chat_id=update.effective_chat.id,
+            message_id=source_msg.message_id,
+            reaction=[ReactionTypeEmoji("👀")]
+        )
+    except Exception as re_err:
+        print(f"Failed to set message reaction: {re_err}")
+
+    status_msg = await source_msg.reply_text("🎙️ *Audio download ho raha hai...* Please wait.", parse_mode="Markdown")
+    download_dir = f"downloads_transcribe_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        tg_file = await context.bot.get_file(target_media.file_id)
+        filename = "input_audio"
+        if hasattr(target_media, "file_name") and target_media.file_name:
+            filename = target_media.file_name
+        ext = os.path.splitext(filename)[1] or ".mp3"
+        
+        input_file = os.path.join(download_dir, f"input{ext}")
+        await tg_file.download_to_drive(input_file)
+
+        await status_msg.edit_text("🤖 *Transcribing using AI (Whisper)...* ⚡")
+
+        with open(input_file, "rb") as file_read:
+            transcription = await groq_client.audio.transcriptions.create(
+                file=(os.path.basename(input_file), file_read),
+                model="whisper-large-v3",
+            )
+        
+        text = transcription.text.strip()
+        if not text:
+            await status_msg.edit_text("❌ *Kuch sunai nahi diya!* Transcription result was empty. 🤷‍♂️")
+            return
+
+        if len(text) <= 4000:
+            await status_msg.edit_text(f"📝 *Transcription:*\n\n{text}", parse_mode="Markdown")
+        else:
+            await status_msg.edit_text("📝 *Transcription too long! Sending as text file...*")
+            txt_path = os.path.join(download_dir, "transcription.txt")
+            with open(txt_path, "w", encoding="utf-8") as f:
+                f.write(text)
+            with open(txt_path, "rb") as f:
+                await source_msg.reply_document(f, caption="📝 Transcription text file. 🎙️")
+            await status_msg.delete()
+
+        track_download(user.id)
+
+    except Exception as e:
+        print(f"Transcription Error: {e}")
+        await status_msg.edit_text(f"❌ *Bhai transcription nahi ho paya:* `{e}`")
     finally:
         cleanup(download_dir)
 
@@ -1935,6 +2203,142 @@ async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Voice Note Error: {e}")
         await source_msg.reply_text(f"❌ *Bhai voice note nahi ban paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def effect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not source_msg.reply_to_message or not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai usage check karo!*\n\n"
+            "Reply to any audio, voice, or video with:\n"
+            "`/effect <type>`\n\n"
+            "Options:\n"
+            "• `chipmunk` — High pitched voice\n"
+            "• `deep` — Low pitched voice\n"
+            "• `echo` — Delay/Echo effect\n"
+            "• `robot` — Metallic vibrato\n"
+            "• `bassboost` — Heavy bass\n"
+            "• `nightcore` — High speed & high pitch",
+            parse_mode="Markdown"
+        )
+        return
+
+    effect_type = context.args[0].lower().strip()
+    valid_effects = {
+        "chipmunk": "asetrate=44100*1.5,aresample=44100",
+        "deep": "asetrate=44100*0.75,aresample=44100",
+        "echo": "aecho=0.8:0.88:60:0.4",
+        "robot": "tremolo=f=10:d=0.7",
+        "bassboost": "bass=g=15",
+        "nightcore": "asetrate=44100*1.25,aresample=44100"
+    }
+
+    if effect_type not in valid_effects:
+        await source_msg.reply_text(
+            "❌ *Bhai effect type galat hai!*\n\n"
+            "Choose: `chipmunk`, `deep`, `echo`, `robot`, `bassboost`, or `nightcore`.",
+            parse_mode="Markdown"
+        )
+        return
+
+    reply = source_msg.reply_to_message
+    target_media = None
+    media_type = None
+
+    if reply.audio:
+        target_media = reply.audio
+        media_type = "audio"
+    elif reply.voice:
+        target_media = reply.voice
+        media_type = "voice"
+    elif reply.video:
+        target_media = reply.video
+        media_type = "video"
+    elif reply.document:
+        mime = reply.document.mime_type or ""
+        if mime.startswith("audio/"):
+            target_media = reply.document
+            media_type = "audio"
+        elif mime.startswith("video/"):
+            target_media = reply.document
+            media_type = "video"
+
+    if not target_media:
+        await source_msg.reply_text("❌ *Bhai kisi audio, voice note ya video ko reply karo!*", parse_mode="Markdown")
+        return
+
+    if target_media.file_size > 20 * 1024 * 1024:
+        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    download_dir = f"downloads_effect_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        tg_file = await context.bot.get_file(target_media.file_id)
+        filename = "input_media"
+        if hasattr(target_media, "file_name") and target_media.file_name:
+            filename = target_media.file_name
+        ext = os.path.splitext(filename)[1] or (".mp4" if media_type == "video" else ".mp3")
+        
+        input_file = os.path.join(download_dir, f"input{ext}")
+        await tg_file.download_to_drive(input_file)
+
+        output_file = os.path.join(download_dir, f"{effect_type}_{filename}")
+
+        ffmpeg_bin = shutil.which('ffmpeg') or '/usr/bin/ffmpeg'
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                if os.path.exists(p):
+                    ffmpeg_bin = p
+                    break
+        
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            raise RuntimeError("FFmpeg not found. Cannot apply audio effect.")
+
+        import subprocess
+        filter_arg = valid_effects[effect_type]
+
+        if media_type == "video":
+            cmd = [
+                ffmpeg_bin, '-y', '-i', input_file,
+                '-c:v', 'copy',
+                '-filter:a', filter_arg,
+                '-c:a', 'aac', output_file
+            ]
+        else:
+            cmd = [
+                ffmpeg_bin, '-y', '-i', input_file,
+                '-filter:a', filter_arg,
+                output_file
+            ]
+
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+            if media_type == "video":
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
+                with open(output_file, 'rb') as f:
+                    await source_msg.reply_video(f, caption=f"🎬 Audio effect *{effect_type.upper()}* applied! 🌟", supports_streaming=True, parse_mode="Markdown")
+            else:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_AUDIO)
+                with open(output_file, 'rb') as f:
+                    if media_type == "voice":
+                        await source_msg.reply_voice(f, caption=f"🎙️ Audio effect *{effect_type.upper()}* applied! ✨", parse_mode="Markdown")
+                    else:
+                        await source_msg.reply_audio(f, caption=f"🎵 Audio effect *{effect_type.upper()}* applied! ✨", parse_mode="Markdown")
+            track_download(user.id)
+        else:
+            raise RuntimeError("FFmpeg failed to produce the filtered media file.")
+
+    except Exception as e:
+        print(f"Effect Error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai audio effect lag nahi paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -2282,6 +2686,133 @@ async def boost_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cleanup(download_dir)
 
 
+async def compress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    level = "medium"
+    if context.args:
+        level = context.args[0].lower().strip()
+
+    if level not in ["low", "medium", "high"]:
+        await source_msg.reply_text(
+            "❌ *Bhai compression level invalid!*\n\n"
+            "Usage: `/compress <low/medium/high>` (as reply to video)\n\n"
+            "• `low`: Maximum compression (480p resolution, lower file size)\n"
+            "• `medium`: Balanced compression (720p resolution)\n"
+            "• `high`: Light compression (No scale, high quality)",
+            parse_mode="Markdown"
+        )
+        return
+
+    if not source_msg.reply_to_message:
+        await source_msg.reply_text(
+            "❌ *Bhai usage check karo!*\n\n"
+            "Reply to any video file with:\n"
+            "`/compress <low/medium/high>`",
+            parse_mode="Markdown"
+        )
+        return
+
+    reply = source_msg.reply_to_message
+    target_media = None
+    media_type = None
+
+    if reply.video:
+        target_media = reply.video
+        media_type = "video"
+    elif reply.document:
+        mime = reply.document.mime_type or ""
+        if mime.startswith("video/"):
+            target_media = reply.document
+            media_type = "video"
+
+    if not target_media:
+        await source_msg.reply_text("❌ *Bhai kisi video file ko reply karo!*", parse_mode="Markdown")
+        return
+
+    if target_media.file_size > 20 * 1024 * 1024:
+        await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        return
+
+    status_msg = await source_msg.reply_text(f"⏳ *Video compress ho raha hai ({level.upper()})...* Yeh thoda time le sakta hai. 🎬", parse_mode="Markdown")
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    download_dir = f"downloads_compress_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        tg_file = await context.bot.get_file(target_media.file_id)
+        filename = "input_video"
+        if hasattr(target_media, "file_name") and target_media.file_name:
+            filename = target_media.file_name
+        ext = os.path.splitext(filename)[1] or ".mp4"
+        
+        input_file = os.path.join(download_dir, f"input{ext}")
+        await tg_file.download_to_drive(input_file)
+
+        output_file = os.path.join(download_dir, f"compressed_{level}_{filename}")
+
+        ffmpeg_bin = shutil.which('ffmpeg') or '/usr/bin/ffmpeg'
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                if os.path.exists(p):
+                    ffmpeg_bin = p
+                    break
+        
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            raise RuntimeError("FFmpeg not found. Cannot compress video.")
+
+        import subprocess
+
+        if level == "low":
+            cmd = [
+                ffmpeg_bin, '-y', '-i', input_file,
+                '-vf', 'scale=-2:480',
+                '-c:v', 'libx264', '-crf', '30', '-preset', 'superfast',
+                '-c:a', 'aac', '-b:a', '64k',
+                output_file
+            ]
+        elif level == "medium":
+            cmd = [
+                ffmpeg_bin, '-y', '-i', input_file,
+                '-vf', 'scale=-2:720',
+                '-c:v', 'libx264', '-crf', '26', '-preset', 'superfast',
+                '-c:a', 'aac', '-b:a', '128k',
+                output_file
+            ]
+        else:
+            cmd = [
+                ffmpeg_bin, '-y', '-i', input_file,
+                '-c:v', 'libx264', '-crf', '22', '-preset', 'superfast',
+                '-c:a', 'aac', '-b:a', '192k',
+                output_file
+            ]
+
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
+            old_size = target_media.file_size / (1024 * 1024)
+            new_size = os.path.getsize(output_file) / (1024 * 1024)
+            with open(output_file, 'rb') as f:
+                await source_msg.reply_video(
+                    f, 
+                    caption=f"⚡ *Compression Complete ({level.upper()})!* 🎬\n\n📉 *Size:* `{old_size:.2f}MB` → `{new_size:.2f}MB`", 
+                    supports_streaming=True, 
+                    parse_mode="Markdown"
+                )
+            await status_msg.delete()
+            track_download(user.id)
+        else:
+            raise RuntimeError("FFmpeg compression output file not found or empty.")
+
+    except Exception as e:
+        print(f"Compress Error: {e}")
+        await status_msg.edit_text(f"❌ *Bhai video compress nahi ho paya:* `{e}`")
+    finally:
+        cleanup(download_dir)
+
+
 async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     source_msg = update.effective_message
     user = update.effective_user
@@ -2360,6 +2891,198 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Filter Error: {e}")
         await source_msg.reply_text(f"❌ *Bhai filter lag nahi paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def watermark_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not source_msg.reply_to_message or not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai usage check karo!*\n\n"
+            "Reply to any photo or video with:\n"
+            "`/watermark <text>`\n\n"
+            "Example: `/watermark MyBrandBot`",
+            parse_mode="Markdown"
+        )
+        return
+
+    watermark_text = " ".join(context.args)
+    reply = source_msg.reply_to_message
+    
+    target_media = None
+    media_type = None
+
+    if reply.photo:
+        target_media = reply.photo[-1]
+        media_type = "photo"
+    elif reply.video:
+        target_media = reply.video
+        media_type = "video"
+    elif reply.document:
+        mime = reply.document.mime_type or ""
+        if mime.startswith("image/"):
+            target_media = reply.document
+            media_type = "photo"
+        elif mime.startswith("video/"):
+            target_media = reply.document
+            media_type = "video"
+
+    if not target_media:
+        await source_msg.reply_text("❌ *Bhai kisi photo ya video ko reply karo!*", parse_mode="Markdown")
+        return
+
+    if target_media.file_size > 20 * 1024 * 1024:
+        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    download_dir = f"downloads_watermark_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        tg_file = await context.bot.get_file(target_media.file_id)
+        filename = "input_media"
+        if hasattr(target_media, "file_name") and target_media.file_name:
+            filename = target_media.file_name
+        ext = os.path.splitext(filename)[1] or (".jpg" if media_type == "photo" else ".mp4")
+        
+        input_file = os.path.join(download_dir, f"input{ext}")
+        await tg_file.download_to_drive(input_file)
+
+        output_file = os.path.join(download_dir, f"watermarked_{filename}")
+
+        ffmpeg_bin = shutil.which('ffmpeg') or '/usr/bin/ffmpeg'
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                if os.path.exists(p):
+                    ffmpeg_bin = p
+                    break
+        
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            raise RuntimeError("FFmpeg not found. Cannot apply watermark.")
+
+        escaped_text = escape_ffmpeg_drawtext(watermark_text)
+
+        import subprocess
+        if media_type == "photo":
+            vf_arg = f"drawtext=text='{escaped_text}':x=w-tw-15:y=h-th-15:fontsize=24:fontcolor=white:box=1:boxcolor=black@0.5"
+            cmd = [ffmpeg_bin, '-y', '-i', input_file, '-vf', vf_arg, output_file]
+        else:
+            vf_arg = f"drawtext=text='{escaped_text}':x=w-tw-20:y=h-th-20:fontsize=20:fontcolor=white:box=1:boxcolor=black@0.4"
+            cmd = [
+                ffmpeg_bin, '-y', '-i', input_file,
+                '-vf', vf_arg,
+                '-c:v', 'libx264', '-preset', 'superfast',
+                '-c:a', 'copy',
+                output_file
+            ]
+
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if res.returncode != 0:
+            err_msg = res.stderr.decode('utf-8', errors='ignore')
+            print(f"FFmpeg Watermark Error output: {err_msg}")
+            if "libfreetype" in err_msg or "drawtext" in err_msg:
+                raise RuntimeError("Your FFmpeg installation does not support text overlay (drawtext/freetype).")
+            else:
+                raise RuntimeError(f"FFmpeg error: {err_msg[:100]}")
+
+        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+            if media_type == "photo":
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+                with open(output_file, 'rb') as photo:
+                    await source_msg.reply_photo(photo, caption=f"🖼️ Watermark overlayed successfully! ✨", parse_mode="Markdown")
+            else:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
+                with open(output_file, 'rb') as video:
+                    await source_msg.reply_video(video, caption=f"🎬 Watermark overlayed successfully! ✨", supports_streaming=True, parse_mode="Markdown")
+            track_download(user.id)
+        else:
+            raise RuntimeError("FFmpeg failed to produce the watermarked file.")
+
+    except Exception as e:
+        print(f"Watermark Error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai watermark overlay nahi ho paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not source_msg.reply_to_message:
+        await source_msg.reply_text(
+            "❌ *Bhai usage check karo!*\n\n"
+            "Reply to any video file with `/mute` to remove its audio track.",
+            parse_mode="Markdown"
+        )
+        return
+
+    reply = source_msg.reply_to_message
+    target_media = None
+    media_type = None
+
+    if reply.video:
+        target_media = reply.video
+        media_type = "video"
+    elif reply.document:
+        mime = reply.document.mime_type or ""
+        if mime.startswith("video/"):
+            target_media = reply.document
+            media_type = "video"
+
+    if not target_media:
+        await source_msg.reply_text("❌ *Bhai kisi video file ko reply karo!*", parse_mode="Markdown")
+        return
+
+    if target_media.file_size > 20 * 1024 * 1024:
+        await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    download_dir = f"downloads_mute_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        tg_file = await context.bot.get_file(target_media.file_id)
+        filename = "input_video"
+        if hasattr(target_media, "file_name") and target_media.file_name:
+            filename = target_media.file_name
+        ext = os.path.splitext(filename)[1] or ".mp4"
+        
+        input_file = os.path.join(download_dir, f"input{ext}")
+        await tg_file.download_to_drive(input_file)
+
+        output_file = os.path.join(download_dir, f"muted_{filename}")
+
+        ffmpeg_bin = shutil.which('ffmpeg') or '/usr/bin/ffmpeg'
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                if os.path.exists(p):
+                    ffmpeg_bin = p
+                    break
+        
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            raise RuntimeError("FFmpeg not found. Cannot mute video.")
+
+        import subprocess
+        cmd = [ffmpeg_bin, '-y', '-i', input_file, '-c:v', 'copy', '-an', output_file]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
+            with open(output_file, 'rb') as video:
+                await source_msg.reply_video(video, caption="🔇 Video Muted successfully! 🎬", supports_streaming=True)
+            track_download(user.id)
+        else:
+            raise RuntimeError("FFmpeg failed to mute the video.")
+
+    except Exception as e:
+        print(f"Mute Error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai video mute nahi ho paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -2580,26 +3303,32 @@ async def post_init(application: Application):
     
     # Set bot commands in the menu
     commands = [
-        ("start",     "Start the bot"),
-        ("help",      "How to use the bot"),
-        ("search",    "Search YouTube videos"),
-        ("mp4",       "Download video via link"),
-        ("mp3",       "Download audio via link"),
-        ("trim",      "Trim video link or reply"),
-        ("tag",       "Edit audio metadata tags"),
-        ("iginfo",    "Instagram profile details"),
-        ("qr",        "Generate QR code image"),
-        ("short",     "Shorten any link URL"),
-        ("voice",     "Convert to native voice note"),
-        ("speed",     "Change media tempo speed"),
-        ("reverse",   "Play video/audio backward"),
-        ("boost",     "Boost audio volume in dB"),
-        ("filter",    "Apply photo filters (gray/blur/edge)"),
-        ("thumb",     "Hi-res thumbnail download"),
-        ("subs",      "Download subtitles (SRT)"),
-        ("gif",       "Convert clip to animated GIF"),
-        ("stats",     "View your download stats"),
-        ("tr",        "Translate to Hindi"),
+        ("start",      "Start the bot"),
+        ("help",       "How to use the bot"),
+        ("search",     "Search YouTube videos"),
+        ("mp4",        "Download video via link"),
+        ("mp3",        "Download audio via link"),
+        ("extract",    "Extract contact info (phone/email)"),
+        ("transcribe", "Transcribe audio to text"),
+        ("effect",     "Apply DSP voice changer effects"),
+        ("compress",   "Compress video size/resolution"),
+        ("watermark",  "Burn watermark on photo/video"),
+        ("mute",       "Mute audio track of video"),
+        ("trim",       "Trim video link or reply"),
+        ("tag",        "Edit audio metadata tags"),
+        ("iginfo",     "Instagram profile details"),
+        ("qr",         "Generate QR code image"),
+        ("short",      "Shorten any link URL"),
+        ("voice",      "Convert to native voice note"),
+        ("speed",      "Change media tempo speed"),
+        ("reverse",    "Play video/audio backward"),
+        ("boost",      "Boost audio volume in dB"),
+        ("filter",     "Apply photo filters (gray/blur/edge)"),
+        ("thumb",      "Hi-res thumbnail download"),
+        ("subs",       "Download subtitles (SRT)"),
+        ("gif",        "Convert clip to animated GIF"),
+        ("stats",      "View your download stats"),
+        ("tr",         "Translate to Hindi"),
     ]
     await application.bot.set_my_commands(commands)
     
@@ -2658,25 +3387,31 @@ def main():
         .build()
     )
 
-    app.add_handler(CommandHandler("start",     start))
-    app.add_handler(CommandHandler("help",      help_command))
-    app.add_handler(CommandHandler("stats",     stats_command))
-    app.add_handler(CommandHandler("search",    search_command))
-    app.add_handler(CommandHandler("mp3",       mp3_command))
-    app.add_handler(CommandHandler("mp4",       mp4_command))
-    app.add_handler(CommandHandler("trim",      trim_command))
-    app.add_handler(CommandHandler("tag",       tag_command))
-    app.add_handler(CommandHandler("iginfo",    iginfo_command))
-    app.add_handler(CommandHandler("qr",        qr_command))
-    app.add_handler(CommandHandler("short",     short_command))
-    app.add_handler(CommandHandler("voice",     voice_command))
-    app.add_handler(CommandHandler("speed",     speed_command))
-    app.add_handler(CommandHandler("reverse",   reverse_command))
-    app.add_handler(CommandHandler("boost",     boost_command))
-    app.add_handler(CommandHandler("filter",    filter_command))
-    app.add_handler(CommandHandler("thumb",     thumb_command))
-    app.add_handler(CommandHandler("subs",      subs_command))
-    app.add_handler(CommandHandler("gif",       gif_command))
+    app.add_handler(CommandHandler("start",      start))
+    app.add_handler(CommandHandler("help",       help_command))
+    app.add_handler(CommandHandler("stats",      stats_command))
+    app.add_handler(CommandHandler("search",     search_command))
+    app.add_handler(CommandHandler("mp3",        mp3_command))
+    app.add_handler(CommandHandler("mp4",        mp4_command))
+    app.add_handler(CommandHandler("extract",    extract_command))
+    app.add_handler(CommandHandler("transcribe", transcribe_command))
+    app.add_handler(CommandHandler("effect",     effect_command))
+    app.add_handler(CommandHandler("compress",   compress_command))
+    app.add_handler(CommandHandler("watermark",  watermark_command))
+    app.add_handler(CommandHandler("mute",       mute_command))
+    app.add_handler(CommandHandler("trim",       trim_command))
+    app.add_handler(CommandHandler("tag",        tag_command))
+    app.add_handler(CommandHandler("iginfo",     iginfo_command))
+    app.add_handler(CommandHandler("qr",         qr_command))
+    app.add_handler(CommandHandler("short",      short_command))
+    app.add_handler(CommandHandler("voice",      voice_command))
+    app.add_handler(CommandHandler("speed",      speed_command))
+    app.add_handler(CommandHandler("reverse",    reverse_command))
+    app.add_handler(CommandHandler("boost",      boost_command))
+    app.add_handler(CommandHandler("filter",     filter_command))
+    app.add_handler(CommandHandler("thumb",      thumb_command))
+    app.add_handler(CommandHandler("subs",       subs_command))
+    app.add_handler(CommandHandler("gif",        gif_command))
     app.add_handler(CommandHandler("translate", translate_command))
     app.add_handler(CommandHandler("tr",        translate_command))
     app.add_handler(CommandHandler("remind",    remind_command))
