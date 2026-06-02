@@ -239,17 +239,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
     ]
     if update.callback_query:
-        await update.callback_query.edit_message_text(
-            welcome_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown",
-        )
+        try:
+            await update.callback_query.edit_message_caption(
+                caption=welcome_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown",
+            )
+        except BadRequest:
+            await update.callback_query.edit_message_text(
+                welcome_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown",
+            )
     else:
-        await update.effective_message.reply_text(
-            welcome_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown",
-        )
+        if os.path.exists("logo.jpg"):
+            with open("logo.jpg", "rb") as logo_file:
+                await update.effective_message.reply_photo(
+                    photo=logo_file,
+                    caption=welcome_text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown",
+                )
+        else:
+            await update.effective_message.reply_text(
+                welcome_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown",
+            )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
@@ -897,14 +913,28 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     source_msg = update.effective_message
     user = update.effective_user
 
-    if not context.args:
+    url = None
+    replied_video = None
+
+    if context.args:
+        url = context.args[0]
+    elif source_msg.reply_to_message:
+        reply = source_msg.reply_to_message
+        if reply.video:
+            replied_video = reply.video
+        elif reply.document and reply.document.mime_type and reply.document.mime_type.startswith("video/"):
+            replied_video = reply.document
+
+    if not url and not replied_video:
         await source_msg.reply_text(
-            "❌ *Bhai link toh bhej!*\n\nExample: `/mp3 https://youtube.com/watch?v=xxx`",
+            "❌ *Bhai use kaise karein?*\n\n"
+            "Format:\n"
+            "• `/mp3 <link>` — Download MP3 from a URL\n"
+            "• Reply to any video file with `/mp3` to extract its audio directly!",
             parse_mode="Markdown"
         )
         return
 
-    url = context.args[0]
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     download_dir = f"downloads_mp3_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
@@ -914,7 +944,6 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
         
         file_path = None
-        is_instagram = "instagram.com" in url
 
         def _resolve_ffmpeg() -> str | None:
             path = shutil.which('ffmpeg')
@@ -925,34 +954,58 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return p
             return None
 
-        async def _instaloader_to_mp3():
-            await asyncio.to_thread(download_instagram, url, download_dir)
-            mp4_files = glob.glob(f"{download_dir}/*.mp4")
-            if not mp4_files:
-                raise RuntimeError("Instaloader failed to find downloaded video for MP3 extraction.")
-            video_path = mp4_files[0]
-            mp3_path = os.path.splitext(video_path)[0] + ".mp3"
-            ffmpeg_bin = _resolve_ffmpeg()
+        ffmpeg_bin = _resolve_ffmpeg()
+
+        if replied_video:
+            if replied_video.file_size > 20 * 1024 * 1024:
+                await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+                cleanup(download_dir)
+                return
+                
+            tg_file = await context.bot.get_file(replied_video.file_id)
+            ext = ".mp4"
+            if hasattr(replied_video, "file_name") and replied_video.file_name:
+                ext = os.path.splitext(replied_video.file_name)[1] or ".mp4"
+                
+            input_file = os.path.join(download_dir, f"input{ext}")
+            await tg_file.download_to_drive(input_file)
+            
+            mp3_path = os.path.join(download_dir, "extracted.mp3")
             if ffmpeg_bin:
                 import subprocess
-                cmd = [ffmpeg_bin, '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
+                cmd = [ffmpeg_bin, '-y', '-i', input_file, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
                 subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return mp3_path
-            print("⚠️ FFmpeg missing — sending Instagram video as audio (no mp3 extraction).")
-            return video_path
-
-        if is_instagram:
-            # YouTube player_client extractor args produce broken metadata for IG.
-            # Route directly to Instaloader; fall back to yt-dlp with IG cookies on failure.
-            try:
-                file_path = await _instaloader_to_mp3()
-            except Exception as e:
-                print(f"Instaloader failed for Instagram MP3, trying yt-dlp. Error: {e}")
-                ig_cookies = _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE, default_domain=".instagram.com")
-                file_path = await asyncio.to_thread(download_video, url, download_dir, True, ig_cookies, hook)
+                file_path = mp3_path
+            else:
+                raise RuntimeError("FFmpeg is missing on the system. Cannot extract audio.")
         else:
-            yt_cookies = _ensure_netscape_cookies(YOUTUBE_COOKIES_FILE, default_domain=".youtube.com")
-            file_path = await asyncio.to_thread(download_video, url, download_dir, True, yt_cookies, hook)
+            is_instagram = "instagram.com" in url
+
+            async def _instaloader_to_mp3():
+                await asyncio.to_thread(download_instagram, url, download_dir)
+                mp4_files = glob.glob(f"{download_dir}/*.mp4")
+                if not mp4_files:
+                    raise RuntimeError("Instaloader failed to find downloaded video for MP3 extraction.")
+                video_path = mp4_files[0]
+                mp3_path = os.path.splitext(video_path)[0] + ".mp3"
+                if ffmpeg_bin:
+                    import subprocess
+                    cmd = [ffmpeg_bin, '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
+                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return mp3_path
+                print("⚠️ FFmpeg missing — sending Instagram video as audio (no mp3 extraction).")
+                return video_path
+
+            if is_instagram:
+                try:
+                    file_path = await _instaloader_to_mp3()
+                except Exception as e:
+                    print(f"Instaloader failed for Instagram MP3, trying yt-dlp. Error: {e}")
+                    ig_cookies = _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE, default_domain=".instagram.com")
+                    file_path = await asyncio.to_thread(download_video, url, download_dir, True, ig_cookies, hook)
+            else:
+                yt_cookies = _ensure_netscape_cookies(YOUTUBE_COOKIES_FILE, default_domain=".youtube.com")
+                file_path = await asyncio.to_thread(download_video, url, download_dir, True, yt_cookies, hook)
 
         # yt-dlp converts to .mp3 after postprocessing — glob for it
         mp3_files = glob.glob(f"{download_dir}/*.mp3")
@@ -1351,6 +1404,403 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cleanup(download_dir)
 
 
+async def trim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    # Expected arguments:
+    # 1. Start time (e.g. 00:10 or 10)
+    # 2. End time (e.g. 00:30 or 30)
+    # 3. URL (optional if replying to a video file)
+    
+    if len(context.args) < 2:
+        await source_msg.reply_text(
+            "❌ *Bhai usage check karo!*\n\n"
+            "Format:\n"
+            "• `/trim <start_time> <end_time> <link>`\n"
+            "• Reply to a video with `/trim <start_time> <end_time>`\n\n"
+            "Examples:\n"
+            "• `/trim 00:10 00:30 https://youtu.be/xxx`\n"
+            "• `/trim 00:05 00:15` (as reply to video)",
+            parse_mode="Markdown"
+        )
+        return
+
+    start_time = context.args[0]
+    end_time = context.args[1]
+    
+    url = context.args[2] if len(context.args) > 2 else None
+    replied_video = None
+    
+    if not url:
+        if source_msg.reply_to_message:
+            reply = source_msg.reply_to_message
+            if reply.video:
+                replied_video = reply.video
+            elif reply.document and reply.document.mime_type and reply.document.mime_type.startswith("video/"):
+                replied_video = reply.document
+                
+        if not replied_video:
+            await source_msg.reply_text("❌ *Bhai koi link nahi mila aur na hi kisi video ko reply kiya!*", parse_mode="Markdown")
+            return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    download_dir = f"downloads_trim_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        input_file = None
+        if url:
+            loop = asyncio.get_running_loop()
+            hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
+            is_instagram = "instagram.com" in url
+            cookies_for_url = (
+                _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE) if is_instagram else YOUTUBE_COOKIES_FILE
+            )
+            file_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
+            if not file_path or not os.path.exists(file_path):
+                file_path = _find_largest_video_file(download_dir)
+            if not file_path:
+                raise RuntimeError("Failed to download video from the link.")
+            input_file = file_path
+        else:
+            # Replied to Telegram video
+            if replied_video.file_size > 20 * 1024 * 1024:
+                await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+                cleanup(download_dir)
+                return
+            
+            tg_file = await context.bot.get_file(replied_video.file_id)
+            ext = ".mp4"
+            if hasattr(replied_video, "file_name") and replied_video.file_name:
+                ext = os.path.splitext(replied_video.file_name)[1] or ".mp4"
+            
+            input_file = os.path.join(download_dir, f"input{ext}")
+            await tg_file.download_to_drive(input_file)
+
+        output_file = os.path.join(download_dir, "trimmed.mp4")
+        ffmpeg_bin = shutil.which('ffmpeg') or '/usr/bin/ffmpeg'
+        if not os.path.exists(ffmpeg_bin):
+            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                if os.path.exists(p):
+                    ffmpeg_bin = p
+                    break
+                    
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            raise RuntimeError("FFmpeg not found. Cannot trim video.")
+
+        import subprocess
+        cmd = [ffmpeg_bin, '-y', '-ss', start_time, '-to', end_time, '-i', input_file, '-c', 'copy', output_file]
+        
+        # Run copy mode first
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        
+        if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
+            # Fall back to re-encoding if copy fails (e.g. keyframe issue)
+            cmd_reencode = [ffmpeg_bin, '-y', '-ss', start_time, '-to', end_time, '-i', input_file, '-c:v', 'libx264', '-c:a', 'aac', output_file]
+            subprocess.run(cmd_reencode, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
+            with open(output_file, 'rb') as video:
+                await source_msg.reply_video(
+                    video, 
+                    caption=f"✂️ Video Trimmed! ({start_time} - {end_time}) 🎬",
+                    supports_streaming=True
+                )
+            track_download(user.id)
+        else:
+            raise RuntimeError("FFmpeg failed to produce a valid trimmed file.")
+
+    except Exception as e:
+        print(f"Trim Error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai trim nahi ho paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not source_msg.reply_to_message:
+        await source_msg.reply_text(
+            "❌ *Bhai usage check karo!*\n\n"
+            "Reply to any Audio/MP3 file with:\n"
+            "`/tag Title | Artist | Album` (Album is optional)\n\n"
+            "Example:\n"
+            "`/tag Dil Se | A.R. Rahman | Dil Se OST`",
+            parse_mode="Markdown"
+        )
+        return
+
+    reply = source_msg.reply_to_message
+    target_audio = None
+    if reply.audio:
+        target_audio = reply.audio
+    elif reply.document and reply.document.mime_type and reply.document.mime_type.startswith("audio/"):
+        target_audio = reply.document
+
+    if not target_audio:
+        await source_msg.reply_text("❌ *Bhai kisi audio file ko reply karo!*", parse_mode="Markdown")
+        return
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai tags specify karo!*\n\n"
+            "Format: `/tag Title | Artist | Album` (use `|` as separator)",
+            parse_mode="Markdown"
+        )
+        return
+
+    arg_str = " ".join(context.args)
+    parts = [p.strip() for p in arg_str.split("|")]
+    
+    title = parts[0] if len(parts) > 0 else ""
+    artist = parts[1] if len(parts) > 1 else ""
+    album = parts[2] if len(parts) > 2 else ""
+
+    if not title:
+        await source_msg.reply_text("❌ *Bhai title specify karna zaroori hai!*", parse_mode="Markdown")
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    download_dir = f"downloads_tag_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        if target_audio.file_size > 20 * 1024 * 1024:
+            await source_msg.reply_text("❌ *Bhai audio file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+            cleanup(download_dir)
+            return
+
+        tg_file = await context.bot.get_file(target_audio.file_id)
+        
+        filename = "music.mp3"
+        if hasattr(target_audio, "file_name") and target_audio.file_name:
+            filename = target_audio.file_name
+        elif hasattr(target_audio, "title") and target_audio.title:
+            filename = f"{target_audio.title}.mp3"
+            
+        ext = os.path.splitext(filename)[1] or ".mp3"
+        input_file = os.path.join(download_dir, f"input{ext}")
+        await tg_file.download_to_drive(input_file)
+
+        out_filename = filename
+        if artist:
+            out_filename = f"{artist} - {title}{ext}"
+        else:
+            out_filename = f"{title}{ext}"
+            
+        output_file = os.path.join(download_dir, out_filename)
+
+        ffmpeg_bin = shutil.which('ffmpeg') or '/usr/bin/ffmpeg'
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
+                if os.path.exists(p):
+                    ffmpeg_bin = p
+                    break
+        
+        if not ffmpeg_bin or not os.path.exists(ffmpeg_bin):
+            raise RuntimeError("FFmpeg not found. Cannot edit tags.")
+
+        import subprocess
+        cmd = [ffmpeg_bin, '-y', '-i', input_file]
+        
+        if title:
+            cmd.extend(['-metadata', f'title={title}'])
+        if artist:
+            cmd.extend(['-metadata', f'artist={artist}'])
+        if album:
+            cmd.extend(['-metadata', f'album={album}'])
+            
+        cmd.extend(['-c:a', 'copy', output_file])
+
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_AUDIO)
+            with open(output_file, 'rb') as audio:
+                await source_msg.reply_audio(
+                    audio, 
+                    title=title,
+                    performer=artist,
+                    caption="✅ Audio Tags Updated! 🎵"
+                )
+            track_download(user.id)
+        else:
+            raise RuntimeError("FFmpeg failed to produce the tagged file.")
+
+    except Exception as e:
+        print(f"Tag Error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai tags edit nahi ho paye:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai username toh batao!*\n\nExample: `/iginfo instagram`",
+            parse_mode="Markdown"
+        )
+        return
+
+    username = context.args[0].replace("@", "").strip()
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    download_dir = f"downloads_iginfo_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        # Load profile info via Instaloader
+        profile = await asyncio.to_thread(instaloader.Profile.from_username, L.context, username)
+        
+        full_name = profile.full_name or "N/A"
+        bio = profile.biography or "No biography"
+        followers = profile.followers
+        following = profile.followees
+        is_private = "Yes 🔒" if profile.is_private else "No 🔓"
+        is_verified = "Yes ✅" if profile.is_verified else "No ❌"
+        posts_count = profile.mediacount
+
+        profile_pic_url = profile.profile_pic_url
+        profile_pic_path = os.path.join(download_dir, "profile_pic.jpg")
+
+        # Download profile picture
+        import urllib.request
+        req = urllib.request.Request(profile_pic_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=30) as resp, open(profile_pic_path, 'wb') as f:
+            shutil.copyfileobj(resp, f)
+
+        caption = (
+            f"📸 *Instagram Profile: @{profile.username}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 *Name:* `{full_name}`\n"
+            f"🔒 *Private:* {is_private}\n"
+            f"✅ *Verified:* {is_verified}\n\n"
+            f"👥 *Followers:* `{followers:,}`\n"
+            f"👥 *Following:* `{following:,}`\n"
+            f"📮 *Posts:* `{posts_count:,}`\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📝 *Bio:* __{bio}__"
+        )
+
+        if os.path.exists(profile_pic_path) and os.path.getsize(profile_pic_path) > 0:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+            with open(profile_pic_path, 'rb') as photo:
+                await source_msg.reply_photo(photo=photo, caption=caption, parse_mode="Markdown")
+        else:
+            await source_msg.reply_text(caption, parse_mode="Markdown")
+
+        track_download(user.id)
+
+    except Exception as e:
+        print(f"Instagram Info Error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai details nahi nikal paye:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def qr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai link ya text toh bhej!*\n\nExample: `/qr https://google.com`",
+            parse_mode="Markdown"
+        )
+        return
+
+    text = " ".join(context.args)
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    download_dir = f"downloads_qr_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        import urllib.parse
+        import urllib.request
+        
+        encoded = urllib.parse.quote(text)
+        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={encoded}"
+        qr_path = os.path.join(download_dir, "qrcode.png")
+
+        req = urllib.request.Request(qr_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=30) as resp, open(qr_path, 'wb') as f:
+            shutil.copyfileobj(resp, f)
+
+        if os.path.exists(qr_path) and os.path.getsize(qr_path) > 0:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+            with open(qr_path, 'rb') as photo:
+                await source_msg.reply_photo(photo=photo, caption=f"✅ *QR Code Generated!* 🔮\n\n`{text[:100]}`", parse_mode="Markdown")
+            track_download(user.id)
+        else:
+            raise RuntimeError("Failed to generate QR code file.")
+
+    except Exception as e:
+        print(f"QR Error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai QR Code nahi ban paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def short_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai link toh bhej!*\n\nExample: `/short https://github.com`",
+            parse_mode="Markdown"
+        )
+        return
+
+    url = context.args[0]
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+    try:
+        import urllib.request
+        import urllib.parse
+        import json
+        
+        short_url = None
+        
+        try:
+            data = urllib.parse.urlencode({'url': url}).encode('utf-8')
+            req = urllib.request.Request("https://cleanuri.com/api/v1/shorten", data=data, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                res = json.loads(resp.read().decode('utf-8'))
+                short_url = res.get("result_url")
+        except Exception as e:
+            print(f"CleanUri failed: {e}. Trying is.gd...")
+
+        if not short_url:
+            encoded = urllib.parse.quote(url)
+            req = urllib.request.Request(f"https://is.gd/create.php?format=json&url={encoded}", headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                res = json.loads(resp.read().decode('utf-8'))
+                short_url = res.get("shorturl")
+
+        if short_url:
+            await source_msg.reply_text(
+                f"🔗 *URL Shortened Successfully!* 🚀\n\n"
+                f"📝 *Original:* {url}\n"
+                f"⚡ *Shortened:* {short_url}",
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
+            track_download(user.id)
+        else:
+            raise RuntimeError("Both APIs failed to shorten the URL.")
+
+    except Exception as e:
+        print(f"Shortener Error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai link short nahi ho paya:* `{e}`", parse_mode="Markdown")
+
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("🔍 *Kya search karna hai?*\n\nExample: `/search divine gully gang`", parse_mode="Markdown")
@@ -1572,6 +2022,11 @@ async def post_init(application: Application):
         ("search",    "Search YouTube videos"),
         ("mp4",       "Download video via link"),
         ("mp3",       "Download audio via link"),
+        ("trim",      "Trim video link or reply"),
+        ("tag",       "Edit audio metadata tags"),
+        ("iginfo",    "Instagram profile details"),
+        ("qr",        "Generate QR code image"),
+        ("short",     "Shorten any link URL"),
         ("thumb",     "Hi-res thumbnail download"),
         ("subs",      "Download subtitles (SRT)"),
         ("gif",       "Convert clip to animated GIF"),
@@ -1641,6 +2096,11 @@ def main():
     app.add_handler(CommandHandler("search",    search_command))
     app.add_handler(CommandHandler("mp3",       mp3_command))
     app.add_handler(CommandHandler("mp4",       mp4_command))
+    app.add_handler(CommandHandler("trim",      trim_command))
+    app.add_handler(CommandHandler("tag",       tag_command))
+    app.add_handler(CommandHandler("iginfo",    iginfo_command))
+    app.add_handler(CommandHandler("qr",        qr_command))
+    app.add_handler(CommandHandler("short",     short_command))
     app.add_handler(CommandHandler("thumb",     thumb_command))
     app.add_handler(CommandHandler("subs",      subs_command))
     app.add_handler(CommandHandler("gif",       gif_command))
