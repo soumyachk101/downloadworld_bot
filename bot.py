@@ -228,6 +228,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📌 *Supported Platforms:* YouTube, Instagram, Facebook, Twitter (X), TikTok, and more!\n\n"
         f"_Tap the buttons below to begin exploring!_ 👇"
     )
+    import urllib.parse
+    bot_username = context.bot.username
+    if not bot_username:
+        try:
+            bot_me = await context.bot.get_me()
+            bot_username = bot_me.username
+        except Exception:
+            bot_username = "everything_downloader_bot"
+
+    share_text = "Check out Download World! Download videos, extract MP3s, edit media files, and apply photo filters instantly. 🚀"
+    share_url = f"https://t.me/share/url?url=https://t.me/{bot_username}&text={urllib.parse.quote(share_text)}"
+
     keyboard = [
         [
             InlineKeyboardButton("🎬 Download Commands", callback_data="show_help"),
@@ -235,7 +247,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         [
             InlineKeyboardButton("📊 My Stats", callback_data="show_stats"),
-            InlineKeyboardButton("⭐ Share / Rate Bot", url="https://t.me/share/url?url=Check%20out%20Everything%20Downloader%20Bot!"),
+            InlineKeyboardButton("⭐ Share / Rate Bot", url=share_url),
         ],
     ]
     if update.callback_query:
