@@ -224,6 +224,16 @@ def escape_ffmpeg_drawtext(text: str) -> str:
     safe_text = safe_text.replace('\\', '\\\\')
     return safe_text
 
+def escape_markdown(text: str) -> str:
+    """Escape special Markdown characters for Telegram messages."""
+    if not text:
+        return ""
+    # Escape Markdown special characters
+    escape_chars = ['_', '*', '`', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in escape_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
+
 # ─── Scheduler ───────────────────────────────────────────────────────────────
 scheduler = AsyncIOScheduler()
 
@@ -327,7 +337,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "▸ `/transcribe` — AI Whisper Speech-to-Text transcriber 📝\n"
         "▸ `/compress <mode>` — Smart video compression (`low`/`medium`/`high`)\n"
         "▸ `/watermark <text>` — Overlay custom text on photos/videos 🏷️\n"
-        "▸ `/mute` — Strip audio streams from video files 🔇\n\n"
+        "▸ `/mute` — Strip audio streams from video files 🔇\n"
+        "▸ `/sticker` — Convert photos/videos to Telegram stickers 🎨\n"
+        "▸ `/caption` — AI-generated captions for images ✨\n"
+        "▸ `/ocr` — Extract text from images 📄\n"
+        "▸ `/tts <text>` — Text-to-speech conversion 🔊\n"
+        "▸ `/notes` — Save and manage personal notes 📝\n\n"
         "🔍 *CONTACT DETAILS SCRAPERS*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "▸ `/iginfo <username>` — Scrape Instagram creator bio & contacts! ℹ️\n"
@@ -1796,10 +1811,12 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with urllib.request.urlopen(req, timeout=30) as resp, open(profile_pic_path, 'wb') as f:
             shutil.copyfileobj(resp, f)
 
+        # Escape full name to prevent Markdown parsing errors
+        full_name_escaped = escape_markdown(full_name)
         caption = (
             f"📸 *Instagram Profile: @{profile.username}*\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 *Name:* `{full_name}`\n"
+            f"👤 *Name:* `{full_name_escaped}`\n"
             f"🔒 *Private:* {is_private}\n"
             f"✅ *Verified:* {is_verified}\n\n"
             f"👥 *Followers:* `{followers:,}`\n"
@@ -1824,7 +1841,9 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption += f"• *Email(s):* {emails_str}\n"
             caption += f"━━━━━━━━━━━━━━━━━━━━━\n"
 
-        caption += f"📝 *Bio:* __{bio}__" 
+        # Escape bio text to prevent Markdown parsing errors
+        bio_escaped = escape_markdown(bio)
+        caption += f"📝 *Bio:* _{bio_escaped}_" 
 
         if os.path.exists(profile_pic_path) and os.path.getsize(profile_pic_path) > 0:
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
@@ -1909,19 +1928,445 @@ async def extract_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = "🔎 *Extracted Details:*\n━━━━━━━━━━━━━━━━━━━━━\n"
     if phones:
         result += "📞 *Mobile / Phone Numbers:*\n"
-        result += "\n".join([f"• `{p}`" for p in phones]) + "\n\n"
+        result += "\n".join([f"• `{escape_markdown(p)}`" for p in phones]) + "\n\n"
     if emails:
         result += "✉️ *Email & Addresses:*\n"
-        result += "\n".join([f"• `{e}`" for e in emails]) + "\n\n"
+        result += "\n".join([f"• `{escape_markdown(e)}`" for e in emails]) + "\n\n"
     if unique_handles:
         result += "👤 *Social Handles:*\n"
-        result += "\n".join([f"• @{h}" for h in unique_handles]) + "\n\n"
+        result += "\n".join([f"• @{escape_markdown(h)}" for h in unique_handles]) + "\n\n"
     if clean_urls:
         result += "🌐 *URLs / Links:*\n"
-        result += "\n".join([f"• {u}" for u in clean_urls]) + "\n\n"
+        result += "\n".join([f"• {escape_markdown(u)}" for u in clean_urls]) + "\n\n"
         
     result += "━━━━━━━━━━━━━━━━━━━━━"
-    await source_msg.reply_text(result, parse_mode="Markdown", disable_web_page_preview=True)
+    
+    # Try sending with Markdown, fallback to plain text if it fails
+    try:
+        await source_msg.reply_text(result, parse_mode="Markdown", disable_web_page_preview=True)
+    except BadRequest as e:
+        # If Markdown parsing fails, send as plain text
+        print(f"Extract Markdown error: {e}, sending as plain text")
+        plain_result = result.replace('*', '').replace('`', '').replace('_', '')
+        await source_msg.reply_text(plain_result, disable_web_page_preview=True)
+
+
+async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Convert images or videos to Telegram stickers."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not source_msg.reply_to_message:
+        await source_msg.reply_text(
+            "❌ *Bhai kisi photo ya video ko reply karo!*\n\n"
+            "Reply to an image or video with `/sticker` to convert it to a sticker!",
+            parse_mode="Markdown"
+        )
+        return
+
+    reply = source_msg.reply_to_message
+    download_dir = f"downloads_sticker_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+        # Check for photo
+        if reply.photo:
+            photo = reply.photo[-1]  # Get highest resolution
+            if photo.file_size > 10 * 1024 * 1024:
+                await source_msg.reply_text("❌ *Bhai photo 10MB se badi hai!* Stickers have size limits. 😔", parse_mode="Markdown")
+                return
+
+            file = await context.bot.get_file(photo.file_id)
+            input_path = os.path.join(download_dir, "input.jpg")
+            await file.download_to_drive(input_path)
+
+            # Convert to WebP format for stickers (512x512)
+            output_path = os.path.join(download_dir, "sticker.webp")
+            cmd = f'ffmpeg -i "{input_path}" -vf "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2" -vcodec libwebp -lossless 1 -loop 0 -preset default -an -vsync 0 "{output_path}" -y'
+            
+            process = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await process.communicate()
+
+            if os.path.exists(output_path):
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+                with open(output_path, 'rb') as sticker:
+                    await source_msg.reply_sticker(sticker=sticker)
+                await source_msg.reply_text("✅ *Sticker created!* 🎨", parse_mode="Markdown")
+            else:
+                await source_msg.reply_text("❌ *Bhai sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
+
+        # Check for video
+        elif reply.video or reply.animation:
+            media = reply.video or reply.animation
+            if media.file_size > 10 * 1024 * 1024:
+                await source_msg.reply_text("❌ *Bhai video 10MB se badi hai!* Stickers have size limits. 😔", parse_mode="Markdown")
+                return
+
+            file = await context.bot.get_file(media.file_id)
+            input_path = os.path.join(download_dir, "input.mp4")
+            await file.download_to_drive(input_path)
+
+            # Convert to animated WebP sticker (512x512, max 3 seconds)
+            output_path = os.path.join(download_dir, "sticker.webp")
+            cmd = f'ffmpeg -i "{input_path}" -vf "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2" -vcodec libwebp -lossless 1 -loop 0 -preset default -an -vsync 0 -t 3 "{output_path}" -y'
+            
+            process = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await process.communicate()
+
+            if os.path.exists(output_path):
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+                with open(output_path, 'rb') as sticker:
+                    await source_msg.reply_sticker(sticker=sticker)
+                await source_msg.reply_text("✅ *Animated sticker created!* 🎨", parse_mode="Markdown")
+            else:
+                await source_msg.reply_text("❌ *Bhai sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
+        else:
+            await source_msg.reply_text("❌ *Bhai sirf photo ya video ko sticker mein convert kar sakte ho!*", parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"Sticker conversion error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai sticker create nahi ho paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def caption_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate AI-powered captions for images."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not groq_client:
+        await source_msg.reply_text("❌ *Bhai GROQ_API_KEY missing hai!* AI features disabled.", parse_mode="Markdown")
+        return
+
+    if not source_msg.reply_to_message or not source_msg.reply_to_message.photo:
+        await source_msg.reply_text(
+            "❌ *Bhai kisi photo ko reply karo!*\n\n"
+            "Reply to a photo with `/caption` to generate an AI caption!",
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+        # Get the photo
+        reply = source_msg.reply_to_message
+        photo = reply.photo[-1]
+        
+        if photo.file_size > 20 * 1024 * 1024:
+            await source_msg.reply_text("❌ *Bhai photo 20MB se badi hai!*", parse_mode="Markdown")
+            return
+
+        download_dir = f"downloads_caption_{user.id}_{source_msg.message_id}"
+        os.makedirs(download_dir, exist_ok=True)
+        
+        file = await context.bot.get_file(photo.file_id)
+        image_path = os.path.join(download_dir, "image.jpg")
+        await file.download_to_drive(image_path)
+
+        # Use Groq AI to generate caption
+        import base64
+        with open(image_path, 'rb') as img_file:
+            image_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Generate a creative, engaging Instagram-style caption for this image. Include relevant emojis and hashtags. Keep it under 150 characters."
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_base64}"
+                        }
+                    }
+                ]
+            }
+        ]
+
+        response = await groq_client.chat.completions.create(
+            model="llama-3.2-11b-vision-preview",
+            messages=messages,
+            max_tokens=200,
+            temperature=0.7
+        )
+
+        caption_text = response.choices[0].message.content
+
+        # Send the photo with AI-generated caption
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+        with open(image_path, 'rb') as photo_file:
+            await source_msg.reply_photo(
+                photo=photo_file,
+                caption=f"✨ *AI Generated Caption:*\n\n{caption_text}",
+                parse_mode="Markdown"
+            )
+
+    except Exception as e:
+        print(f"Caption generation error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai caption generate nahi ho paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def ocr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Extract text from images using OCR."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not source_msg.reply_to_message or not source_msg.reply_to_message.photo:
+        await source_msg.reply_text(
+            "❌ *Bhai kisi photo ko reply karo!*\n\n"
+            "Reply to a photo with `/ocr` to extract text from it!",
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+        # Get the photo
+        reply = source_msg.reply_to_message
+        photo = reply.photo[-1]
+        
+        if photo.file_size > 20 * 1024 * 1024:
+            await source_msg.reply_text("❌ *Bhai photo 20MB se badi hai!*", parse_mode="Markdown")
+            return
+
+        download_dir = f"downloads_ocr_{user.id}_{source_msg.message_id}"
+        os.makedirs(download_dir, exist_ok=True)
+        
+        file = await context.bot.get_file(photo.file_id)
+        image_path = os.path.join(download_dir, "image.jpg")
+        await file.download_to_drive(image_path)
+
+        # Try using pytesseract for OCR
+        try:
+            from PIL import Image
+            import pytesseract
+            
+            # Open image and extract text
+            img = Image.open(image_path)
+            extracted_text = pytesseract.image_to_string(img, lang='eng+hin')
+            
+            if extracted_text.strip():
+                result = f"📝 *Extracted Text:*\n━━━━━━━━━━━━━━━━━━━━━\n\n{escape_markdown(extracted_text)}"
+                await source_msg.reply_text(result, parse_mode="Markdown")
+            else:
+                await source_msg.reply_text("❌ *Bhai is photo mein koi text nahi mila!*", parse_mode="Markdown")
+                
+        except ImportError:
+            # Fallback: Use Groq Vision AI
+            if not groq_client:
+                await source_msg.reply_text("❌ *Bhai OCR libraries missing aur GROQ_API_KEY bhi nahi hai!*", parse_mode="Markdown")
+                return
+
+            import base64
+            with open(image_path, 'rb') as img_file:
+                image_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Extract all visible text from this image. Return only the text, nothing else."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            }
+                        }
+                    ]
+                }
+            ]
+
+            response = await groq_client.chat.completions.create(
+                model="llama-3.2-11b-vision-preview",
+                messages=messages,
+                max_tokens=1000,
+                temperature=0.1
+            )
+
+            extracted_text = response.choices[0].message.content
+            result = f"📝 *Extracted Text (AI):*\n━━━━━━━━━━━━━━━━━━━━━\n\n{escape_markdown(extracted_text)}"
+            await source_msg.reply_text(result, parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"OCR error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai text extract nahi ho paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Convert text to speech using AI."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not groq_client:
+        await source_msg.reply_text("❌ *Bhai GROQ_API_KEY missing hai!* AI features disabled.", parse_mode="Markdown")
+        return
+
+    # Get text from command or replied message
+    text_to_speak = ""
+    if context.args:
+        text_to_speak = " ".join(context.args)
+    elif source_msg.reply_to_message:
+        reply = source_msg.reply_to_message
+        if reply.text:
+            text_to_speak = reply.text
+        elif reply.caption:
+            text_to_speak = reply.caption
+
+    if not text_to_speak:
+        await source_msg.reply_text(
+            "❌ *Bhai text toh do!*\n\n"
+            "Format:\n"
+            "• `/tts <text>`\n"
+            "• Reply to a text message with `/tts`",
+            parse_mode="Markdown"
+        )
+        return
+
+    if len(text_to_speak) > 1000:
+        await source_msg.reply_text("❌ *Bhai text 1000 characters se zyada hai!*", parse_mode="Markdown")
+        return
+
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VOICE)
+
+        download_dir = f"downloads_tts_{user.id}_{source_msg.message_id}"
+        os.makedirs(download_dir, exist_ok=True)
+        output_path = os.path.join(download_dir, "speech.mp3")
+
+        # Use Groq TTS API
+        response = await groq_client.audio.speech.create(
+            model="playai-tts",
+            voice="Fritz-PlayAI",
+            input=text_to_speak
+        )
+
+        # Save the audio file
+        response.stream_to_file(output_path)
+
+        if os.path.exists(output_path):
+            with open(output_path, 'rb') as audio_file:
+                await source_msg.reply_voice(voice=audio_file, duration=0)
+            await source_msg.reply_text("✅ *Speech generated!* 🔊", parse_mode="Markdown")
+        else:
+            await source_msg.reply_text("❌ *Bhai speech generate nahi ho paya!*", parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"TTS error: {e}")
+        await source_msg.reply_text(f"❌ *Bhai speech generate nahi ho paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Save and retrieve personal notes."""
+    source_msg = update.effective_message
+    user = update.effective_user
+    user_id = str(user.id)
+
+    # Load or create notes storage
+    notes_file = "user_notes.json"
+    try:
+        if os.path.exists(notes_file):
+            with open(notes_file, 'r', encoding='utf-8') as f:
+                all_notes = json.load(f)
+        else:
+            all_notes = {}
+    except:
+        all_notes = {}
+
+    if user_id not in all_notes:
+        all_notes[user_id] = []
+
+    # Check command arguments
+    if not context.args:
+        # Show all notes
+        if not all_notes[user_id]:
+            await source_msg.reply_text(
+                "📝 *Bhai tumhare paas koi notes nahi hai!*\n\n"
+                "Use `/notes <text>` to save a new note.",
+                parse_mode="Markdown"
+            )
+            return
+
+        notes_list = "📝 *Your Notes:*\n━━━━━━━━━━━━━━━━━━━━━\n"
+        for i, note in enumerate(all_notes[user_id][-10:], 1):  # Show last 10 notes
+            timestamp = note.get('time', 'Unknown')
+            text = note.get('text', '')
+            notes_list += f"*{i}.* {escape_markdown(text)}\n   _{timestamp}_\n\n"
+        
+        if len(all_notes[user_id]) > 10:
+            notes_list += f"\n_Showing last 10 of {len(all_notes[user_id])} notes_"
+        
+        await source_msg.reply_text(notes_list, parse_mode="Markdown")
+        return
+
+    # Check for delete command
+    if context.args[0].lower() == "delete" and len(context.args) > 1:
+        try:
+            note_index = int(context.args[1]) - 1
+            if 0 <= note_index < len(all_notes[user_id]):
+                deleted_note = all_notes[user_id].pop(note_index)
+                with open(notes_file, 'w', encoding='utf-8') as f:
+                    json.dump(all_notes, f, ensure_ascii=False, indent=2)
+                await source_msg.reply_text(
+                    f"✅ *Note deleted!*\n\n_{escape_markdown(deleted_note['text'])}_",
+                    parse_mode="Markdown"
+                )
+            else:
+                await source_msg.reply_text("❌ *Bhai invalid note number!*", parse_mode="Markdown")
+        except ValueError:
+            await source_msg.reply_text("❌ *Bhai valid number do!* Example: `/notes delete 1`", parse_mode="Markdown")
+        return
+
+    # Check for clear command
+    if context.args[0].lower() == "clear":
+        all_notes[user_id] = []
+        with open(notes_file, 'w', encoding='utf-8') as f:
+            json.dump(all_notes, f, ensure_ascii=False, indent=2)
+        await source_msg.reply_text("✅ *Saare notes clear kar diye!* 🗑️", parse_mode="Markdown")
+        return
+
+    # Save new note
+    note_text = " ".join(context.args)
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    all_notes[user_id].append({
+        'text': note_text,
+        'time': timestamp
+    })
+
+    with open(notes_file, 'w', encoding='utf-8') as f:
+        json.dump(all_notes, f, ensure_ascii=False, indent=2)
+
+    await source_msg.reply_text(
+        f"✅ *Note saved!*\n\n_{escape_markdown(note_text)}_\n\n"
+        f"Use `/notes` to view all your notes.",
+        parse_mode="Markdown"
+    )
 
 
 async def transcribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3409,6 +3854,11 @@ def main():
     app.add_handler(CommandHandler("translate", translate_command))
     app.add_handler(CommandHandler("tr",        translate_command))
     app.add_handler(CommandHandler("remind",    remind_command))
+    app.add_handler(CommandHandler("sticker",   sticker_command))
+    app.add_handler(CommandHandler("caption",   caption_command))
+    app.add_handler(CommandHandler("ocr",       ocr_command))
+    app.add_handler(CommandHandler("tts",       tts_command))
+    app.add_handler(CommandHandler("notes",     notes_command))
     app.add_handler(CallbackQueryHandler(button_callback, pattern="^(mode_|show_)"))
     app.add_handler(CallbackQueryHandler(dl_callback,     pattern="^dl_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
