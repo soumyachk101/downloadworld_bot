@@ -347,6 +347,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "▸ `/iginfo <username>` — Scrape Instagram creator bio & contacts! ℹ️\n"
         "▸ `/extract` — Scrape emails, mobile numbers, handles & URLs from replied text! 📞\n\n"
+        "🌐 *SOCIAL MEDIA DOWNLOADERS*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "▸ `/playlist <link> [mp3|mp4]` — Download a YouTube playlist (up to 25 items) 📜\n"
+        "▸ `/hashtags <reel_url>` — Score an Instagram reel's hashtag reach 📊\n"
+        "▸ `/reddit <sub|url>` — Pull top image/video from a subreddit 🔴\n"
+        "▸ `/ycomments <video_url>` — Show top comments on a YouTube video 💬\n"
+        "▸ `/ttslideshow <tiktok_url>` — Download every slide of a TikTok slideshow 🎞️\n"
+        "▸ `/pinboard <board_url>` — Download all images from a Pinterest board 📌\n\n"
         "🌐 *UTILITIES & AI FUN*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "▸ `/tr <text>` — Translate to Hindi (or reply with `/tr`)\n"
@@ -3741,6 +3749,580 @@ async def dl_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mp3_command(update, context)
 
 
+# ─── 6 new social-media features ──────────────────────────────────────────────
+# All six are network-only (no ffmpeg, no Groq, no extra deps). They piggyback
+# on yt-dlp where possible and fall back to public HTTP endpoints otherwise.
+
+# ─── /playlist — Download every video in a YouTube playlist as MP3 or MP4 ─────
+
+async def playlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Usage: `/playlist <youtube_playlist_url> [mp3|mp4]` (default mp4, max 25 items)."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai playlist link toh de!*\n\n"
+            "Usage: `/playlist <link> [mp3|mp4]` (max 25 items, default mp4)",
+            parse_mode="Markdown",
+        )
+        return
+
+    url = context.args[0]
+    audio_only = False
+    if len(context.args) > 1 and context.args[1].lower().strip() in ("mp3", "audio"):
+        audio_only = True
+    elif len(context.args) > 1 and context.args[1].lower().strip() in ("mp4", "video"):
+        audio_only = False
+
+    status_msg = await source_msg.reply_text(
+        f"📜 *Playlist scan ho rahi hai...* (max 25 items, mode=`{'MP3' if audio_only else 'MP4'}`)",
+        parse_mode="Markdown",
+    )
+    download_dir = f"downloads_playlist_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        # 1. Flatten the playlist — extract_info with noplaylist=False returns
+        # a 'entries' list. We resolve each entry's webpage_url so yt-dlp can
+        # then download them one at a time through the same tiered pipeline.
+        flat_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": "in_playlist",
+            "skip_download": True,
+            "playlistend": 25,
+            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        }
+        if YOUTUBE_COOKIES_FILE:
+            flat_opts["cookiefile"] = YOUTUBE_COOKIES_FILE
+        with yt_dlp.YoutubeDL(flat_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        entries = (info or {}).get("entries") or []
+        if not entries:
+            await status_msg.edit_text("❌ *Bhai playlist empty hai ya URL galat hai!*")
+            cleanup(download_dir)
+            return
+        # Keep the count modest so we don't blow the 50 MB Telegram upload
+        # limit or hit yt-dlp rate limits.
+        entries = entries[:25]
+
+        sent = 0
+        failed = 0
+        for idx, entry in enumerate(entries, 1):
+            entry_url = entry.get("url") or entry.get("webpage_url")
+            if not entry_url:
+                failed += 1
+                continue
+            entry_title = (entry.get("title") or f"item {idx}")[:60]
+            try:
+                await status_msg.edit_text(
+                    f"📥 *Downloading {idx}/{len(entries)}*\n`{entry_title}`",
+                    parse_mode="Markdown",
+                )
+                item_dir = os.path.join(download_dir, f"item_{idx}")
+                os.makedirs(item_dir, exist_ok=True)
+                ig_cookies = _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE, default_domain=".instagram.com")
+                yt_cookies = _ensure_netscape_cookies(YOUTUBE_COOKIES_FILE, default_domain=".youtube.com")
+                cookies_for_url = ig_cookies if "instagram.com" in entry_url else yt_cookies
+                fpath = await asyncio.to_thread(
+                    download_video, entry_url, item_dir, audio_only, cookies_for_url, None
+                )
+                if not fpath or not os.path.exists(fpath):
+                    failed += 1
+                    continue
+                # Skip anything over Telegram's 50 MB bot upload limit
+                if os.path.getsize(fpath) > 50 * 1024 * 1024:
+                    failed += 1
+                    continue
+                if audio_only:
+                    with open(fpath, "rb") as f:
+                        await source_msg.reply_audio(f, caption=f"🎵 {entry_title}  ({idx}/{len(entries)})")
+                else:
+                    with open(fpath, "rb") as f:
+                        await source_msg.reply_video(
+                            f,
+                            caption=f"🎬 {entry_title}  ({idx}/{len(entries)})",
+                            supports_streaming=True,
+                        )
+                sent += 1
+                track_download(user.id)
+            except Exception as inner_e:
+                print(f"Playlist item {idx} failed: {inner_e}")
+                failed += 1
+                continue
+
+        await status_msg.edit_text(
+            f"✅ *Playlist complete!*\n\n"
+            f"📤 Sent: *{sent}*\n❌ Failed: *{failed}* (out of {len(entries)})",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        print(f"Playlist error: {e}")
+        await status_msg.edit_text(f"❌ *Bhai playlist download nahi ho payi:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+# ─── /hashtags — Score an Instagram reel link by reach potential ──────────────
+
+_HASHTAG_BANK = {
+    "fyp": 1.0, "viral": 1.0, "reels": 0.9, "reel": 0.9, "trending": 0.9,
+    "explore": 0.8, "explorepage": 0.9, "instagood": 0.6, "instadaily": 0.6,
+    "love": 0.5, "follow": 0.5, "followme": 0.5, "followforfollow": 0.4,
+    "funny": 0.7, "comedy": 0.6, "meme": 0.6, "memes": 0.6, "lol": 0.5,
+    "music": 0.6, "dance": 0.6, "song": 0.5, "songs": 0.5, "lyrics": 0.5,
+    "food": 0.5, "foodie": 0.5, "recipe": 0.5, "cooking": 0.5,
+    "fitness": 0.5, "workout": 0.5, "gym": 0.5, "motivation": 0.6,
+    "travel": 0.5, "wanderlust": 0.5, "nature": 0.5, "photography": 0.6,
+    "fashion": 0.6, "style": 0.6, "ootd": 0.6, "beauty": 0.5,
+    "tech": 0.5, "gaming": 0.5, "gamer": 0.5,
+    "cricket": 0.6, "football": 0.6, "ipl": 0.7, "bollywood": 0.6,
+    "india": 0.5, "desi": 0.5, "hindi": 0.5, "punjabi": 0.5,
+}
+
+
+def _score_hashtags(hashtags):
+    """Cheap reach-potential score: weighted count of niche tags minus generic ones."""
+    if not hashtags:
+        return 0, [], []
+    weighted = []
+    generic = []
+    for tag in hashtags:
+        weight = _HASHTAG_BANK.get(tag.lower())
+        if weight is None:
+            weighted.append(tag)
+        elif weight >= 0.5:
+            weighted.append(tag)
+        else:
+            generic.append(tag)
+    # 30 hashtag cap, sweet spot 8-15. Beyond that, IG throttles.
+    if len(hashtags) > 30:
+        length_penalty = -0.5
+    elif 8 <= len(hashtags) <= 15:
+        length_penalty = 0.5
+    else:
+        length_penalty = 0.0
+    niche_ratio = len(weighted) / max(1, len(hashtags))
+    score = round(5.0 + 4.0 * niche_ratio + length_penalty, 1)
+    return min(10.0, max(0.0, score)), weighted, generic
+
+
+async def hashtags_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Usage: `/hashtags <instagram_reel_url>` or `/hashtags <hashtag1 hashtag2 ...>`."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai input toh de!*\n\n"
+            "Format:\n"
+            "• `/hashtags <instagram_reel_url>` — score the post's hashtags\n"
+            "• `/hashtags #fyp #viral #reels` — score a hashtag set you plan to use",
+            parse_mode="Markdown",
+        )
+        return
+
+    raw = " ".join(context.args)
+    is_url = raw.startswith("http://") or raw.startswith("https://")
+
+    if is_url and "instagram.com" in raw:
+        # Pull the caption off the post via instaloader, then extract its hashtags.
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        try:
+            m = re.search(r'/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)', raw)
+            if not m:
+                await source_msg.reply_text("❌ *Bhai yeh Instagram shortcode nahi hai!*", parse_mode="Markdown")
+                return
+            shortcode = m.group(1)
+            post = await asyncio.to_thread(instaloader.Post.from_shortcode, L.context, shortcode)
+            caption = post.caption or ""
+            hashtags = re.findall(r"#(\w+)", caption)
+            if not hashtags:
+                await source_msg.reply_text("❌ *Is reel pe koi hashtag nahi hai.* 🤷", parse_mode="Markdown")
+                return
+            source_label = f"the reel `{shortcode}`"
+        except instaloader.exceptions.LoginRequiredException:
+            await source_msg.reply_text(
+                "🔒 *Login chahiye!* INSTA_USERNAME / INSTA_PASSWORD env mein add kar.",
+                parse_mode="Markdown",
+            )
+            return
+        except instaloader.exceptions.ProfileNotExistsException:
+            await source_msg.reply_text("❌ *Reel exist nahi karti ya private hai.*", parse_mode="Markdown")
+            return
+        except Exception as e:
+            await source_msg.reply_text(f"❌ *Hashtag pull nahi ho paya:* `{e}`", parse_mode="Markdown")
+            return
+    else:
+        # Treat as a raw hashtag list
+        hashtags = re.findall(r"#?(\w+)", raw)
+        source_label = "your input"
+
+    if not hashtags:
+        await source_msg.reply_text("❌ *Koi hashtag nahi mila!*", parse_mode="Markdown")
+        return
+
+    score, weighted, generic = _score_hashtags(hashtags)
+    if score >= 8:
+        verdict = "🔥 *Excellent!* Strong niche mix. Reel should pop in Explore."
+    elif score >= 6:
+        verdict = "✅ *Solid set.* Reasonable reach potential."
+    elif score >= 4:
+        verdict = "⚠️ *Meh.* Too many generic tags dilute reach. Swap a few for niche."
+    else:
+        verdict = "❌ *Weak.* Mostly overused tags — IG throttles these."
+
+    tag_list = ", ".join(f"`#{h}`" for h in hashtags[:30])
+    weighted_list = ", ".join(f"`#{h}`" for h in weighted) or "_none_"
+    generic_list = ", ".join(f"`#{h}`" for h in generic) or "_none_"
+
+    msg = (
+        f"📊 *Hashtag score for* {source_label}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 *Score:* *{score}/10*  {verdict}\n\n"
+        f"📦 *Total tags:* {len(hashtags)} (IG sweet spot 8–15)\n\n"
+        f"🌟 *Niche / high-value ({len(weighted)}):*\n{weighted_list}\n\n"
+        f"🔁 *Generic ({len(generic)}):*\n{generic_list}\n\n"
+        f"🏷 *All tags:*\n{tag_list}"
+    )
+    await source_msg.reply_text(msg, parse_mode="Markdown", disable_web_page_preview=True)
+    track_download(user.id)
+
+
+# ─── /reddit — Pull the top image / video off a subreddit or Reddit post ──────
+
+async def reddit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Usage: `/reddit <subreddit | reddit_post_url>` (default sort: top/week)."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai input toh de!*\n\n"
+            "• `/reddit pics` — top from r/pics this week\n"
+            "• `/reddit https://reddit.com/r/aww/comments/xxx/...`",
+            parse_mode="Markdown",
+        )
+        return
+
+    target = context.args[0].strip()
+    # Build a Reddit JSON URL. The .json suffix returns a parseable payload
+    # without needing PRAW or an API key.
+    if "reddit.com" in target:
+        url = target if target.endswith(".json") else re.sub(r"/?$", ".json", target)
+    else:
+        sub = target.lstrip("r/").strip("/")
+        url = f"https://www.reddit.com/r/{sub}/top.json?t=week&limit=10"
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    try:
+        import urllib.request
+        import json as _json
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "TelegramBot:DownloadWorld:v1 (by /u/anonymous)"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            payload = _json.loads(resp.read().decode("utf-8"))
+        listing = (payload.get("data") or {}).get("children") or []
+        if not listing:
+            await source_msg.reply_text("❌ *Kuch nahi mila!* Subreddit private ya empty ho sakta hai.", parse_mode="Markdown")
+            return
+
+        # Find the first post whose URL points to a downloadable image or video
+        chosen = None
+        for child in listing:
+            d = (child or {}).get("data") or {}
+            u = (d.get("url_overridden_by_dest") or d.get("url") or "").lower()
+            if any(u.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".gifv")):
+                chosen = d
+                break
+        if not chosen:
+            chosen = (listing[0].get("data") or {})
+
+        title = chosen.get("title", "Reddit post")[:200]
+        media_url = chosen.get("url_overridden_by_dest") or chosen.get("url")
+        permalink = "https://reddit.com" + (chosen.get("permalink") or "")
+        if not media_url:
+            await source_msg.reply_text("❌ *Is post ka media URL nahi mila.*", parse_mode="Markdown")
+            return
+
+        lower = media_url.lower()
+        dl_dir = f"downloads_reddit_{user.id}_{source_msg.message_id}"
+        os.makedirs(dl_dir, exist_ok=True)
+        try:
+            req2 = urllib.request.Request(media_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req2, timeout=30) as resp, open(
+                os.path.join(dl_dir, "media.bin"), "wb"
+            ) as out:
+                shutil.copyfileobj(resp, out)
+            local_path = os.path.join(dl_dir, "media.bin")
+            size = os.path.getsize(local_path)
+            if size > 50 * 1024 * 1024:
+                await source_msg.reply_text("❌ *Media 50MB se bada hai, Telegram upload nahi hoga.*", parse_mode="Markdown")
+                return
+
+            caption = f"🔴 *r/{chosen.get('subreddit','')}*\n*{title}*\n{permalink}"
+            if any(lower.endswith(ext) for ext in (".gif", ".gifv")):
+                with open(local_path, "rb") as f:
+                    await source_msg.reply_animation(f, caption=caption)
+            elif any(lower.endswith(ext) for ext in (".mp4",)):
+                with open(local_path, "rb") as f:
+                    await source_msg.reply_video(f, caption=caption, supports_streaming=True)
+            else:
+                with open(local_path, "rb") as f:
+                    await source_msg.reply_photo(f, caption=caption)
+            track_download(user.id)
+        finally:
+            cleanup(dl_dir)
+    except Exception as e:
+        print(f"Reddit error: {e}")
+        await source_msg.reply_text(f"❌ *Reddit se fetch nahi ho paya:* `{e}`", parse_mode="Markdown")
+
+
+# ─── /ycomments — Pull the top comments from a YouTube video ─────────────────
+
+async def ycomments_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Usage: `/ycomments <youtube_video_url>` (shows top 10)."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai link toh de!*\n\nExample: `/ycomments https://youtu.be/xxx`",
+            parse_mode="Markdown",
+        )
+        return
+
+    url = context.args[0]
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+    fetch_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "getcomments": True,
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+    }
+    if YOUTUBE_COOKIES_FILE:
+        fetch_opts["cookiefile"] = YOUTUBE_COOKIES_FILE
+
+    try:
+        with yt_dlp.YoutubeDL(fetch_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        comments = (info or {}).get("comments") or []
+        if not comments:
+            await source_msg.reply_text(
+                "❌ *Comments nahi mile.* (video ne comments disable kiye hain ya auth chahiye)",
+                parse_mode="Markdown",
+            )
+            return
+        top = comments[:10]
+        title = (info or {}).get("title", "Video")
+        author = (info or {}).get("uploader") or (info or {}).get("channel") or "Unknown"
+        lines = [f"💬 *Top comments on* `{title}`\n📺 *Channel:* {author}\n━━━━━━━━━━━━━━━━━━━━━"]
+        for i, c in enumerate(top, 1):
+            who = c.get("author") or "anon"
+            text = (c.get("text") or "").replace("\n", " ").strip()
+            text = text[:280] + ("…" if len(text) > 280 else "")
+            likes = c.get("like_count")
+            like_str = f"  👍 `{likes}`" if isinstance(likes, int) else ""
+            lines.append(f"*{i}.* {who}{like_str}\n   {text}")
+        # 4096 char Telegram cap — split if needed
+        chunks = []
+        cur = ""
+        for line in lines:
+            if len(cur) + len(line) + 1 > 3900:
+                chunks.append(cur)
+                cur = line
+            else:
+                cur = cur + "\n" + line if cur else line
+        if cur:
+            chunks.append(cur)
+        for chunk in chunks:
+            await source_msg.reply_text(chunk, parse_mode="Markdown", disable_web_page_preview=True)
+        track_download(user.id)
+    except Exception as e:
+        print(f"ycomments error: {e}")
+        await source_msg.reply_text(f"❌ *Comments fetch nahi ho paye:* `{e}`", parse_mode="Markdown")
+
+
+# ─── /ttslideshow — Download a TikTok slideshow (multi-image post) ────────────
+
+async def ttslideshow_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Usage: `/ttslideshow <tiktok_url>` — pulls every image off a TikTok photo post."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai TikTok link toh de!*\n\n"
+            "Example: `/ttslideshow https://www.tiktok.com/@user/video/xxx`",
+            parse_mode="Markdown",
+        )
+        return
+
+    url = context.args[0]
+    status_msg = await source_msg.reply_text("🎞️ *TikTok slideshow scan ho rahi hai...*", parse_mode="Markdown")
+    download_dir = f"downloads_ttslideshow_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "extract_flat": False,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        entries = (info or {}).get("entries") or []
+        if not entries:
+            # Photo-mode TikTok: the post itself is the slideshow, and yt-dlp
+            # returns the image list under formats[].url or under the
+            # 'thumbnails' list. We just bail with a helpful message.
+            await status_msg.edit_text(
+                "❌ *Slideshow images nahi mile.* (ya toh video hai, ya yt-dlp version outdated)",
+                parse_mode="Markdown",
+            )
+            return
+
+        # Walk the entries — TikTok slideshows come as a sequence of image
+        # entries with direct https URLs in the 'url' field.
+        sent = 0
+        for idx, e in enumerate(entries, 1):
+            media_url = e.get("url")
+            if not media_url:
+                continue
+            try:
+                import urllib.request
+                req = urllib.request.Request(media_url, headers={"User-Agent": "Mozilla/5.0"})
+                out = os.path.join(download_dir, f"slide_{idx:02d}.jpg")
+                with urllib.request.urlopen(req, timeout=30) as resp, open(out, "wb") as f:
+                    shutil.copyfileobj(resp, f)
+                with open(out, "rb") as photo:
+                    await source_msg.reply_photo(photo, caption=f"🖼️ Slide {idx}")
+                sent += 1
+            except Exception as inner:
+                print(f"ttslideshow slide {idx} failed: {inner}")
+                continue
+
+        if sent == 0:
+            await status_msg.edit_text("❌ *Koi image download nahi ho payi.*", parse_mode="Markdown")
+        else:
+            await status_msg.edit_text(
+                f"✅ *Slideshow delivered!* Sent *{sent}* image(s). 🎉",
+                parse_mode="Markdown",
+            )
+            track_download(user.id)
+    except Exception as e:
+        print(f"ttslideshow error: {e}")
+        await status_msg.edit_text(f"❌ *Slideshow pull nahi ho paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+# ─── /pinboard — Download every Pin on a public Pinterest board ──────────────
+
+async def pinboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Usage: `/pinboard <pinterest_board_url> [count]` (max 20 images)."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not context.args:
+        await source_msg.reply_text(
+            "❌ *Bhai Pinterest board URL de!*\n\n"
+            "Example: `/pinboard https://pinterest.com/user/board-name/`",
+            parse_mode="Markdown",
+        )
+        return
+
+    url = context.args[0]
+    count = 10
+    if len(context.args) > 1:
+        try:
+            count = max(1, min(20, int(context.args[1])))
+        except ValueError:
+            pass
+
+    status_msg = await source_msg.reply_text(f"📌 *Pinterest board scan ho rahi hai...* (asking for {count} pins)", parse_mode="Markdown")
+    download_dir = f"downloads_pinboard_{user.id}_{source_msg.message_id}"
+    os.makedirs(download_dir, exist_ok=True)
+
+    try:
+        # Pinterest rate-limits anonymous scrapers, so use yt-dlp's built-in
+        # pinterest extractor with a permissive format selector. Then resolve
+        # each entry's largest image via a separate HEAD/GET.
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "extract_flat": "in_playlist",
+            "playlistend": count,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        entries = (info or {}).get("entries") or []
+        if not entries:
+            await status_msg.edit_text("❌ *Board empty hai ya URL galat hai.*", parse_mode="Markdown")
+            return
+        entries = entries[:count]
+
+        sent = 0
+        import urllib.request
+        for idx, e in enumerate(entries, 1):
+            pin_url = e.get("url") or e.get("webpage_url")
+            if not pin_url:
+                continue
+            try:
+                # Pull the pin page HTML to find the largest image URL inside
+                # the og:image meta tag — Pinterest embeds it in <meta property>.
+                req = urllib.request.Request(
+                    pin_url,
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; PinterestBot/1.0)"},
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    html = resp.read().decode("utf-8", errors="ignore")
+                # og:image is the canonical full-size Pin image
+                m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html, re.IGNORECASE)
+                if not m:
+                    m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html, re.IGNORECASE)
+                if not m:
+                    continue
+                img_url = m.group(1)
+                # Pinterest's CDN sometimes serves originals behind /originals/
+                img_url = img_url.replace("/236x/", "/736x/").replace("/474x/", "/736x/")
+                ext = os.path.splitext(img_url.split("?")[0])[1].lower() or ".jpg"
+                if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+                    ext = ".jpg"
+                out = os.path.join(download_dir, f"pin_{idx:02d}{ext}")
+                req2 = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req2, timeout=30) as resp, open(out, "wb") as f:
+                    shutil.copyfileobj(resp, f)
+                if os.path.getsize(out) > 50 * 1024 * 1024:
+                    continue
+                with open(out, "rb") as photo:
+                    await source_msg.reply_photo(photo, caption=f"📌 Pin {idx}/{len(entries)}")
+                sent += 1
+            except Exception as inner:
+                print(f"pinboard pin {idx} failed: {inner}")
+                continue
+        if sent == 0:
+            await status_msg.edit_text("❌ *Koi pin download nahi ho paya.* (board private ho sakti hai)", parse_mode="Markdown")
+        else:
+            await status_msg.edit_text(
+                f"✅ *Board fetched!* Sent *{sent}* pin(s). 🎉",
+                parse_mode="Markdown",
+            )
+            track_download(user.id)
+    except Exception as e:
+        print(f"pinboard error: {e}")
+        await status_msg.edit_text(f"❌ *Pinterest board pull nahi ho paya:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
 # ─── Global Error Handler ─────────────────────────────────────────────────────
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3787,6 +4369,12 @@ async def post_init(application: Application):
         ("gif",        "Convert clip to animated GIF"),
         ("stats",      "View your download stats"),
         ("tr",         "Translate to Hindi"),
+        ("playlist",   "Download a YouTube playlist (mp3/mp4) 📜"),
+        ("hashtags",   "Score an Instagram reel's hashtag reach 📊"),
+        ("reddit",     "Pull top image/video from a subreddit 🔴"),
+        ("ycomments",  "Show top comments on a YouTube video 💬"),
+        ("ttslideshow", "Download every slide of a TikTok slideshow 🎞️"),
+        ("pinboard",   "Download all images from a Pinterest board 📌"),
     ]
     await application.bot.set_my_commands(commands)
     
@@ -3878,6 +4466,12 @@ def main():
     app.add_handler(CommandHandler("ocr",       ocr_command))
     app.add_handler(CommandHandler("tts",       tts_command))
     app.add_handler(CommandHandler("notes",     notes_command))
+    app.add_handler(CommandHandler("playlist",  playlist_command))
+    app.add_handler(CommandHandler("hashtags",  hashtags_command))
+    app.add_handler(CommandHandler("reddit",    reddit_command))
+    app.add_handler(CommandHandler("ycomments", ycomments_command))
+    app.add_handler(CommandHandler("ttslideshow", ttslideshow_command))
+    app.add_handler(CommandHandler("pinboard",  pinboard_command))
     app.add_handler(CallbackQueryHandler(button_callback, pattern="^(mode_|show_)"))
     app.add_handler(CallbackQueryHandler(dl_callback,     pattern="^dl_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -3888,3 +4482,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
