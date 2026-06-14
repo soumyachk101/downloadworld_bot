@@ -1985,13 +1985,19 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Convert to WebP format for stickers (512x512)
             output_path = os.path.join(download_dir, "sticker.webp")
             cmd = f'ffmpeg -i "{input_path}" -vf "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2" -vcodec libwebp -lossless 1 -loop 0 -preset default -an -vsync 0 "{output_path}" -y'
-            
+
             process = await asyncio.create_subprocess_shell(
                 cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            await process.communicate()
+            _, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                err_msg = stderr.decode(errors="ignore").strip() if stderr else "Unknown error"
+                print(f"Sticker (photo) ffmpeg error: {err_msg}")
+                await source_msg.reply_text("❌ *Bhai sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
+                return
 
             if os.path.exists(output_path):
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
@@ -2015,13 +2021,19 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Convert to animated WebP sticker (512x512, max 3 seconds)
             output_path = os.path.join(download_dir, "sticker.webp")
             cmd = f'ffmpeg -i "{input_path}" -vf "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2" -vcodec libwebp -lossless 1 -loop 0 -preset default -an -vsync 0 -t 3 "{output_path}" -y'
-            
+
             process = await asyncio.create_subprocess_shell(
                 cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            await process.communicate()
+            _, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                err_msg = stderr.decode(errors="ignore").strip() if stderr else "Unknown error"
+                print(f"Sticker (video) ffmpeg error: {err_msg}")
+                await source_msg.reply_text("❌ *Bhai sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
+                return
 
             if os.path.exists(output_path):
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
@@ -2158,17 +2170,22 @@ async def ocr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             from PIL import Image
             import pytesseract
-            
+
             # Open image and extract text
             img = Image.open(image_path)
-            extracted_text = pytesseract.image_to_string(img, lang='eng+hin')
-            
+            # 'hin' language pack may not be installed on the host — fall back to eng
+            # so a single missing tessdata file does not break OCR entirely.
+            try:
+                extracted_text = pytesseract.image_to_string(img, lang='eng+hin')
+            except pytesseract.TesseractError:
+                extracted_text = pytesseract.image_to_string(img, lang='eng')
+
             if extracted_text.strip():
                 result = f"📝 *Extracted Text:*\n━━━━━━━━━━━━━━━━━━━━━\n\n{escape_markdown(extracted_text)}"
                 await source_msg.reply_text(result, parse_mode="Markdown")
             else:
                 await source_msg.reply_text("❌ *Bhai is photo mein koi text nahi mila!*", parse_mode="Markdown")
-                
+
         except ImportError:
             # Fallback: Use Groq Vision AI
             if not groq_client:
@@ -2260,11 +2277,13 @@ async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = await groq_client.audio.speech.create(
             model="playai-tts",
             voice="Fritz-PlayAI",
+            response_format="mp3",
             input=text_to_speak
         )
 
-        # Save the audio file
-        response.stream_to_file(output_path)
+        # Save the audio file — Groq's AsyncBinaryAPIResponse uses write_to_file,
+        # not the (legacy/sync-only) stream_to_file name used by OpenAI's client.
+        response.write_to_file(output_path)
 
         if os.path.exists(output_path):
             with open(output_path, 'rb') as audio_file:
