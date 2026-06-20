@@ -199,23 +199,46 @@ def extract_contact_info(text: str):
         return [], []
     email_pattern = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
     emails = email_pattern.findall(text)
-    
+
+    # Phone regex — supports:
+    #   +CC AAA NNN NNNN     (e.g. +91 98765 43210)
+    #   +CC AAA-NNN-NNNN     (e.g. +1-415-555-2671)
+    #   +CC (AAA) NNN-NNNN   (e.g. +1 (415) 555-2671)
+    #   NNNNN NNNNN         (e.g. 98765 43210)
+    #   NNNNN-NNNNN         (e.g. 98765-43210)
+    #   NNNNNNNNNN          (e.g. 9876543210)
+    #   NNN-NNN-NNNN        (e.g. 415-555-2671)
+    #   NNNN-NNN-NNN        (e.g. 1800-123-456)
+    # A leading +country-code group is OPTIONAL, so an unprefixed 10-digit
+    # number is still picked up. The lookarounds keep us from matching
+    # inside @handles, dates, hashtag counts, and credit-card-shaped noise.
     phone_pattern = re.compile(
-        r'(?:\+?\d{1,3}[-.\s]?)?'
-        r'(?:\(?\d{2,5}\)?[-.\s]?)?'
-        r'\d{3,5}[-.\s]?\d{3,5}[-.\s]?\d{3,5}'
+        r"(?<![@\w])"                          # don't start mid-word
+        r"(?:\+\d{1,3}[\s.\-]?)?"            # optional +CC
+        r"(?:\(\d{2,5}\)|\d{2,5})[\s.\-]?" # area code (parens or plain)
+        r"\d{3,5}"                              # first block
+        r"(?:[\s.\-]?\d{3,5})"                # second block
+        r"(?:[\s.\-]?\d{2,5})?"               # optional third block
+        r"(?!\d)"                               # not followed by more digits
     )
     phones_found = phone_pattern.findall(text)
-    
+
     valid_phones = []
     for ph in phones_found:
         digits_only = re.sub(r'\D', '', ph)
-        if 8 <= len(digits_only) <= 15:
-            clean_ph = ph.strip()
-            clean_ph = re.sub(r'\s+', ' ', clean_ph)
-            if clean_ph not in valid_phones:
-                valid_phones.append(clean_ph)
-                
+        # Real phones: 8–15 digits, but reject 13+ digit sequences that
+        # look like credit-card or order numbers (4-4-4-4 grouping, etc.).
+        if not (8 <= len(digits_only) <= 15):
+            continue
+        if len(digits_only) >= 13:
+            continue
+        # Reject obvious dates: 2024-01-15, 12/05/2024, etc.
+        if re.match(r'^(19|20)\d{2}[-/.\s]\d{1,2}[-/.\s]\d{1,2}', ph):
+            continue
+        clean_ph = re.sub(r'\s+', ' ', ph).strip()
+        if clean_ph and clean_ph not in valid_phones:
+            valid_phones.append(clean_ph)
+
     unique_emails = list(dict.fromkeys([e.lower().strip() for e in emails]))
     return unique_emails, valid_phones
 
@@ -1773,9 +1796,13 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.makedirs(download_dir, exist_ok=True)
 
     try:
-        # Load profile info via Instaloader
-        profile = await asyncio.to_thread(instaloader.Profile.from_username, L.context, username)
-        
+        # Load profile info via Instaloader. We run it in a worker thread with
+        # a hard timeout so a stuck session can't hang the bot forever.
+        profile = await asyncio.wait_for(
+            asyncio.to_thread(instaloader.Profile.from_username, L.context, username),
+            timeout=45.0,
+        )
+
         full_name = profile.full_name or "N/A"
         bio = profile.biography or "No biography"
         followers = profile.followers
@@ -1813,11 +1840,19 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         profile_pic_url = profile.profile_pic_url
         profile_pic_path = os.path.join(download_dir, "profile_pic.jpg")
 
-        # Download profile picture
-        import urllib.request
-        req = urllib.request.Request(profile_pic_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=30) as resp, open(profile_pic_path, 'wb') as f:
-            shutil.copyfileobj(resp, f)
+        # Download profile picture — if it fails we still send the text
+        # details below instead of bailing out on the whole command.
+        try:
+            import urllib.request
+            req = urllib.request.Request(profile_pic_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=20) as resp, open(profile_pic_path, 'wb') as f:
+                shutil.copyfileobj(resp, f)
+        except Exception as pic_err:
+            print(f"Instagram profile-pic download failed: {pic_err}")
+            try:
+                os.remove(profile_pic_path)
+            except OSError:
+                pass
 
         # Escape full name to prevent Markdown parsing errors
         full_name_escaped = escape_markdown(full_name)
@@ -1884,9 +1919,27 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Please configure your login details or try again later.",
             parse_mode="Markdown"
         )
+    except instaloader.exceptions.PrivateProfileNotFollowedException:
+        await source_msg.reply_text(
+            f"🔒 *@{username} is private.*\n\n"
+            "Bhai, private accounts ka data sirf unke approved followers ko "
+            "milta hai. Public info (name, bio, follower count) ke liye "
+            "follow request bhejo!",
+            parse_mode="Markdown"
+        )
+    except (asyncio.TimeoutError, TimeoutError):
+        await source_msg.reply_text(
+            "⏱️ *Instagram ne respond nahi kiya 45s mein.*\n\n"
+            "Bhai, shayad rate-limit ya slow network hai. Thodi der baad "
+            "dobara try karo ya cookies refresh karo.",
+            parse_mode="Markdown"
+        )
     except Exception as e:
-        print(f"Instagram Info Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai details nahi nikal paye:* `{e}`", parse_mode="Markdown")
+        print(f"Instagram Info Error: {type(e).__name__}: {e}")
+        await source_msg.reply_text(
+            f"❌ *Bhai details nahi nikal paye:* `{type(e).__name__}: {e}`",
+            parse_mode="Markdown"
+        )
     finally:
         cleanup(download_dir)
 
