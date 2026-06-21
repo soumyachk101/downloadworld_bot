@@ -341,7 +341,7 @@ docker run -d \
 </details>
 
 <details>
-<summary><b>🎛️ Media Studio — 11 commands (FFmpeg)</b></summary>
+<summary><b>🎛️ Media Studio — 11 Commands (FFmpeg)</b></summary>
 
 ```
 /effect <type>    chipmunk | deep | echo | robot | bassboost | nightcore
