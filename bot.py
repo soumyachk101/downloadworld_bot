@@ -30,7 +30,6 @@ from telegram.ext import (
 
 
 import yt_dlp
-import instaloader
 from groq import AsyncGroq
 from deep_translator import GoogleTranslator
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -40,19 +39,7 @@ from datetime import timedelta
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-INSTA_USERNAME = os.getenv("INSTA_USERNAME")   # Add these in Railway/env
-INSTA_PASSWORD = os.getenv("INSTA_PASSWORD")
-YOUTUBE_COOKIES_FILE = os.getenv("YOUTUBE_COOKIES_FILE")
-if YOUTUBE_COOKIES_FILE and not os.path.exists(YOUTUBE_COOKIES_FILE):
-    print(f"⚠️  YOUTUBE_COOKIES_FILE is set but file not found: {YOUTUBE_COOKIES_FILE}")
-    print("   YouTube downloads may fail due to bot detection.")
-    YOUTUBE_COOKIES_FILE = None
-
-YOUTUBE_EXTRACTOR_ARGS = os.getenv("YOUTUBE_EXTRACTOR_ARGS", "")
-INSTAGRAM_COOKIES_FILE = os.getenv("INSTAGRAM_COOKIES_FILE")
-if INSTAGRAM_COOKIES_FILE and not os.path.exists(INSTAGRAM_COOKIES_FILE):
-    print(f"⚠️  INSTAGRAM_COOKIES_FILE is set but file not found: {INSTAGRAM_COOKIES_FILE}")
-    INSTAGRAM_COOKIES_FILE = None
+APIFY_TOKEN = os.getenv("APIFY_TOKEN")
 
 # ─── Groq Client ─────────────────────────────────────────────────────────────
 groq_client = None
@@ -60,113 +47,6 @@ if GROQ_API_KEY:
     groq_client = AsyncGroq(api_key=GROQ_API_KEY)
 else:
     print("Warning: GROQ_API_KEY missing. AI features disabled.")
-
-# ─── Instaloader Setup ───────────────────────────────────────────────────────
-L = instaloader.Instaloader(
-    download_pictures=True,
-    download_video_thumbnails=False,
-    download_geotags=False,
-    download_comments=False,
-    save_metadata=False,
-    compress_json=False,
-    sleep=True,             # auto-sleep between requests — helps avoid rate limits
-    quiet=True,
-)
-
-def setup_instaloader_session():
-    """
-    Login priority:
-      1. Session file (platform-specific location)
-      2. Instagram cookies file (INSTAGRAM_COOKIES_FILE)
-      3. Username + Password from env
-      4. Anonymous (public posts only, rate-limited heavily)
-    """
-    if not INSTA_USERNAME:
-        print("Warning: INSTA_USERNAME missing — using anonymous session (rate-limits likely)")
-        return
-
-    # Get the correct session file path where instaloader actually saves it
-    # On Windows: %LOCALAPPDATA%\Instaloader\session-USERNAME
-    # On Unix/Linux/Mac: ~/.config/instaloader/session-USERNAME
-    if sys.platform == "win32":
-        base_dir = os.path.join(os.getenv('LOCALAPPDATA'), 'Instaloader')
-    else:
-        base_dir = os.path.expanduser('~/.config/instaloader')
-
-    session_file = os.path.join(base_dir, f'session-{INSTA_USERNAME}')
-
-    # 1. Try to load existing session file
-    if os.path.exists(session_file):
-        try:
-            L.load_session_from_file(INSTA_USERNAME, session_file)
-            print(f"✅ Instaloader: session loaded for @{INSTA_USERNAME}")
-            return
-        except Exception as e:
-            print(f"⚠️  Session file load failed ({e}), trying next method...")
-
-    # 2. Try cookies file if provided (Netscape format -> requests Session)
-    if INSTAGRAM_COOKIES_FILE:
-        try:
-            import http.cookiejar
-            import traceback
-            import json
-            from requests.cookies import RequestsCookieJar
-            jar = RequestsCookieJar()
-
-            with open(INSTAGRAM_COOKIES_FILE, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-
-            if content.startswith('['):
-                cookies_data = json.loads(content)
-                for c in cookies_data:
-                    name = c.get('name')
-                    value = c.get('value')
-                    if name and value:
-                        domain = c.get('domain', '.instagram.com')
-                        path = c.get('path', '/')
-                        secure = c.get('secure', True)
-                        jar.set(name, value, domain=domain, path=path, secure=secure)
-            else:
-                ncjar = http.cookiejar.MozillaCookieJar(INSTAGRAM_COOKIES_FILE)
-                ncjar.load(ignore_discard=True, ignore_expires=True)
-                for cookie in ncjar:
-                    jar.set(cookie.name, cookie.value, domain=cookie.domain,
-                            path=cookie.path, secure=cookie.secure)
-
-            has_session = "sessionid" in set(jar.keys())
-            if has_session:
-                L.context._session.cookies = jar
-                print(f"✅ Instaloader: logged in via cookies ({len(jar)} cookies loaded)")
-                return
-            else:
-                print("⚠️  Instagram cookies file has no sessionid — not logged in")
-        except Exception as e:
-            print(f"⚠️  Failed to load Instagram cookies: {e}")
-            traceback.print_exc()
-
-    # 3. Try password login
-    if INSTA_PASSWORD:
-        try:
-            L.login(INSTA_USERNAME, INSTA_PASSWORD)
-            os.makedirs(os.path.dirname(session_file), exist_ok=True)
-            L.save_session_to_file(session_file)
-            print(f"✅ Instaloader: logged in as @{INSTA_USERNAME}, session saved.")
-            return
-        except Exception as e:
-            error_msg = str(e).lower()
-            if "checkpoint" in error_msg or "challenge" in error_msg:
-                print(f"❌ Instagram checkpoint required!")
-                print(f"   Your account needs additional verification.")
-                print(f"   Steps to fix:")
-                print(f"   1. Log into https://instagram.com in your browser")
-                print(f"   2. Complete any security challenges")
-                print(f"   3. Or use cookies file instead of password:")
-                print(f"      Export Instagram cookies and set INSTAGRAM_COOKIES_FILE")
-            else:
-                print(f"❌ Instaloader login failed: {e}")
-
-    # 4. Fallback to anonymous
-    print("⚠️  Falling back to anonymous session (rate-limited).")
 
 # ─── Stats Persistence ───────────────────────────────────────────────────────
 import json
@@ -642,290 +522,173 @@ def _find_largest_audio_file(directory: str) -> str | None:
     """Return the largest audio file in a directory by file size."""
     return _find_largest_media_file(directory, _AUDIO_EXTENSIONS)
 
-def _resolve_downloaded_path(info: dict, output_path: str, audio_only: bool) -> str | None:
-    """Resolve the downloaded file path using yt-dlp metadata and directory fallbacks.
 
-    Expected info keys: filepath and _filename (strings, optional), requested_downloads
-    (list of dicts with filepath/filename), and id (string) from yt-dlp extract_info.
-    """
-    candidates = []
-    seen = set()
+class CobaltDownloadError(Exception):
+    pass
 
-    if output_path and not os.path.isdir(output_path):
-        output_path = None
+async def download_via_cobalt(url: str, output_dir: str, audio_only: bool = False) -> str:
+    import httpx
+    import os
+    import shutil
+    import subprocess
+    import string
+    import random
+    from urllib.parse import urlparse
+    import re
 
-    def add_candidate(path: str | None):
-        if path and path not in seen:
-            seen.add(path)
-            candidates.append(path)
+    api_url = os.getenv("COBALT_API_URL")
+    api_key = os.getenv("COBALT_API_KEY")
 
-    if isinstance(info, dict):
-        add_candidate(info.get("filepath"))
-        add_candidate(info.get("_filename"))
-        for req in info.get("requested_downloads") or []:
-            add_candidate(req.get("filepath"))
-            add_candidate(req.get("filename"))
-        info_id = info.get("id")
-        if info_id and output_path:
-            extensions = _AUDIO_EXTENSIONS if audio_only else _VIDEO_EXTENSIONS
-            with os.scandir(output_path) as entries:
-                for entry in entries:
-                    if not entry.is_file():
-                        continue
-                    if not entry.name.startswith(f"{info_id}."):
-                        continue
-                    if os.path.splitext(entry.name)[1].lower() in extensions:
-                        add_candidate(entry.path)
-
-    for path in candidates:
-        if path and os.path.exists(path):
-            return path
-    fallback = _find_largest_audio_file(output_path) if audio_only else _find_largest_video_file(output_path)
-    if not fallback:
-        print("⚠️ Could not resolve downloaded file path from yt-dlp metadata.")
-    return fallback
-
-def _ensure_netscape_cookies(path: str | None, default_domain: str = ".instagram.com") -> str | None:
-    """yt-dlp expects Netscape cookie format. If the file is JSON (e.g. exported
-    via Instagram cookie editor extensions), convert it to a sibling .netscape
-    file and return that path. Returns the original path for Netscape files.
-    Returns None if path is None or unreadable. default_domain is used when a
-    cookie entry omits the domain field."""
-    if not path or not os.path.exists(path):
-        return None
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-    except Exception:
-        return path
-
-    if not content.startswith('['):
-        return path  # already Netscape
-
-    try:
-        cookies_data = json.loads(content)
-    except Exception:
-        return path
-
-    normalized_default_domain = default_domain
-    if normalized_default_domain and not normalized_default_domain.startswith('.'):
-        normalized_default_domain = f".{normalized_default_domain}"
-
-    def normalize_domain(domain_value: str | None) -> str:
-        if not domain_value:
-            domain_value = normalized_default_domain or ""
-        if not domain_value:
-            return ""
-        if not domain_value.startswith('.') and not domain_value.startswith('www'):
-            domain_value = f".{domain_value}"
-        return domain_value
-
-    netscape_path = path + ".netscape"
-    lines = ["# Netscape HTTP Cookie File", "# Auto-generated from JSON cookies", ""]
-    for c in cookies_data:
-        name = c.get('name')
-        value = c.get('value')
-        if not name or value is None:
-            continue
-        domain = normalize_domain(c.get('domain'))
-        include_subdomains = "TRUE" if domain.startswith('.') else "FALSE"
-        cookie_path = c.get('path', '/')
-        secure = "TRUE" if c.get('secure', True) else "FALSE"
-        expires = int(c.get('expirationDate', 0)) or 0
-        lines.append("\t".join([domain, include_subdomains, cookie_path, secure, str(expires), name, value]))
-
-    try:
-        with open(netscape_path, 'w', encoding='utf-8') as f:
-            f.write("\n".join(lines) + "\n")
-        return netscape_path
-    except Exception as e:
-        print(f"⚠️ Failed to write Netscape cookies: {e}")
-        return path
-
-
-def _parse_extractor_args(args_str: str) -> dict:
-    """Parse YOUTUBE_EXTRACTOR_ARGS into yt-dlp format.
-
-    Format: "youtubetab:skip=webpage" "youtube:player_skip=webpage,configs;visitor_data=VALUE"
-    Returns: {'youtubetab': {'skip': 'webpage'}, 'youtube': {'player_skip': 'webpage,configs', 'visitor_data': 'VALUE'}}
-    """
-    if not args_str:
-        return {}
-
-    result = {}
-    # Split by spaces, but respect potential quoted sections
-    parts = args_str.strip().split()
-    for part in parts:
-        if ':' not in part:
-            continue
-        extractor, args_part = part.split(':', 1)
-        args_dict = {}
-        # Split multiple args by semicolon
-        for arg in args_part.split(';'):
-            if '=' in arg:
-                key, value = arg.split('=', 1)
-                args_dict[key] = value
-        if args_dict:
-            result[extractor] = args_dict
-    return result
-
-
-def download_video(url: str, output_path: str, audio_only: bool = False, cookies_file: str = None, progress_hook=None) -> str:
-    """Blocking yt-dlp download — run via asyncio.to_thread."""
-    
-    def get_ffmpeg_path():
-        path = shutil.which('ffmpeg')
-        if path: return path
-        for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
-            if os.path.exists(p): return p
-        return None
-
-    # Base options
-    base_opts = {
-        'outtmpl': f'{output_path}/%(id)s.%(ext)s',
-        'quiet': True,
-        'no_warnings': True,
-        'progress_hooks': [progress_hook] if progress_hook else [],
-        'socket_timeout': 420, # Prevent "uncomplete" downloads
-        'retries': 10,
-    }
-    
-    ffmpeg_path = get_ffmpeg_path()
-    if ffmpeg_path:
-        base_opts['ffmpeg_location'] = ffmpeg_path
-    
-    if cookies_file:
-        base_opts['cookiefile'] = cookies_file
-
-    ffmpeg_available = bool(ffmpeg_path)
-
-    def add_audio_postprocessor(opts):
-        # Only add FFmpegExtractAudio when ffmpeg present — otherwise yt-dlp
-        # downloads succeed but postprocess fails with
-        # "Postprocessing: ffprobe and ffmpeg not found".
-        if audio_only and ffmpeg_available:
-            opts.setdefault('postprocessors', [])
-            opts['postprocessors'].append({
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            })
-        return opts
-
-    if audio_only:
-        # Without ffmpeg, prefer m4a/mp3 directly so yt-dlp returns a Telegram-
-        # playable file without needing postprocess.
-        hq_format = (
-            'bestaudio/best'
-            if ffmpeg_available
-            else 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best'
-        )
-    else:
-        hq_format = (
-            'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-            if ffmpeg_available
-            else 'best[ext=mp4]/best'
-        )
-
-    def make_opts(fmt, client=None, strip_cookies=False, extra_args=None):
-        opts = base_opts.copy()
-        opts['format'] = fmt
-        if not audio_only and ffmpeg_available:
-            opts['merge_output_format'] = 'mp4'
-        if strip_cookies:
-            opts.pop('cookiefile', None)
-        args = {}
-        if client:
-            args['youtube'] = {'player_client': [client]}
-        if extra_args:
-            for k, v in extra_args.items():
-                args.setdefault(k, {}).update(v)
-        if args:
-            opts['extractor_args'] = args
-        return add_audio_postprocessor(opts)
-
-    # Permissive format string for non-YT sites (Pinterest, Twitter etc.) where
-    # ext-specific filters fail. Covers single-stream + split-stream cases.
-    permissive_fmt = (
-        'bestaudio/best' if audio_only
-        else 'bestvideo+bestaudio/best/b/bv*+ba/bv/ba/worst'
-    )
-
-    tiers = [
-        # 1. HQ + cookies + user extractor args
-        (lambda: {**make_opts(hq_format),
-                  **(({'extractor_args': _parse_extractor_args(YOUTUBE_EXTRACTOR_ARGS)}
-                      if YOUTUBE_EXTRACTOR_ARGS else {}))},
-         "HQ+cookies+extractor_args"),
-        # 2. Android client + cookies — bypasses YT bot detection
-        (lambda: make_opts(hq_format, client='android'),
-         "HQ+android_client"),
-        # 3. iOS client + cookies — second YT bypass
-        (lambda: make_opts('bestaudio/best' if audio_only else 'best', client='ios'),
-         "best+ios_client"),
-        # 4. TV embedded client + no cookies — very permissive
-        (lambda: make_opts('best', client='tv_embedded', strip_cookies=True),
-         "best+tv_embedded+no_cookies"),
-        # 5. Permissive format, no client — works for non-YT sites (Pinterest,
-        # Twitter, Reddit) where ext filters fail.
-        (lambda: make_opts(permissive_fmt),
-         "permissive_format"),
-        # 6. Last resort: android, no cookies, any format
-        (lambda: make_opts('b', client='android', strip_cookies=True),
-         "fallback+android+no_cookies"),
+    instances = [
+        "https://api.cobalt.tools",
+        "https://dog.kittycat.boo",
+        "https://rue-cobalt.xenon.zone",
+        "https://cobaltapi.cjs.nz",
+        "https://cobalt.api.zwei.one",
+        "https://co.e-z.host",
+        "https://cobalt.urania.wang",
+        "https://api.cobalt.bkc.hi.cn"
     ]
+    if api_url:
+        instances.insert(0, api_url)
 
-    last_err = None
-    for opts_fn, label in tiers:
-        try:
-            opts = opts_fn()
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                resolved_path = _resolve_downloaded_path(info, output_path, audio_only)
-                return resolved_path or ydl.prepare_filename(info)
-        except Exception as e:
-            print(f"⚠️ Tier [{label}] failed: {e}")
-            last_err = e
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if api_key:
+        headers["Authorization"] = f"Api-Key {api_key}"
 
-    raise RuntimeError(f"All download tiers failed. Last error: {last_err}")
+    payload = {
+        "url": url,
+        "downloadMode": "audio" if audio_only else "auto",
+        "videoQuality": "1080",
+        "filenameStyle": "basic"
+    }
 
+    os.makedirs(output_dir, exist_ok=True)
+    last_error = "Unknown Error"
+    
+    # 15s timeout on connect, 30s overall for Cobalt API call
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=15.0)) as client:
+        for instance_url in instances:
+            try:
+                resp = await client.post(f"{instance_url}/", json=payload, headers=headers)
+                
+                if resp.status_code != 200:
+                    try:
+                        err_data = resp.json()
+                        err_text = err_data.get("error", {}).get("code", resp.text)
+                    except:
+                        err_text = resp.text
+                    last_error = f"Cobalt API Error {resp.status_code} on {instance_url}: {err_text}"
+                    continue
+                    
+                data = resp.json()
+                status = data.get("status")
 
-def download_instagram(url: str, output_path: str):
-    """
-    Blocking instaloader download with retry on rate-limit (401).
-    Raises on final failure so the caller can surface a proper error message.
-    """
-    match = re.search(r'/(?:p|reel|tv)/([A-Za-z0-9_-]+)', url)
-    if not match:
-        raise ValueError("Invalid Instagram URL — shortcode not found")
+                if status == "error":
+                    code = data.get("error", {}).get("code", "UNKNOWN_ERROR")
+                    last_error = f"Cobalt API Error on {instance_url}: {code}"
+                    continue
+                    
+                if status in ["tunnel", "redirect"]:
+                    target_url = data.get("url")
+                    filename = data.get("filename", "")
+                    if not target_url:
+                        last_error = f"No URL in tunnel/redirect response from {instance_url}"
+                        continue
+                        
+                    return await _download_file(target_url, output_dir, filename=filename)
+                    
+                elif status == "picker":
+                    items = data.get("picker", [])
+                    if not items:
+                        last_error = f"Empty picker response from {instance_url}"
+                        continue
+                    # For now, just grab the first item.
+                    target_url = items[0].get("url")
+                    return await _download_file(target_url, output_dir)
+                    
+                elif status == "local-processing":
+                    items = data.get("tunnel", [])
+                    if not items:
+                        last_error = f"No items for local-processing from {instance_url}"
+                        continue
+                        
+                    files = []
+                    for item in items:
+                        file_path = await _download_file(item, output_dir)
+                        files.append(file_path)
+                    
+                    if len(files) == 1:
+                        return files[0]
+                    
+                    ffmpeg_bin = shutil.which("ffmpeg")
+                    if not ffmpeg_bin:
+                        raise CobaltDownloadError("ffmpeg required for local-processing but not found")
+                        
+                    out_ext = ".mp3" if audio_only else ".mp4"
+                    out_name = f"merged_{''.join(random.choices(string.ascii_letters, k=6))}{out_ext}"
+                    out_path = os.path.join(output_dir, out_name)
+                    
+                    cmd = [ffmpeg_bin, "-y"]
+                    for f in files:
+                        cmd.extend(["-i", f])
+                    if audio_only:
+                        cmd.extend(["-vn", "-acodec", "libmp3lame", "-ab", "192k"])
+                    else:
+                        cmd.extend(["-c", "copy"])
+                    cmd.append(out_path)
+                    
+                    try:
+                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                    except subprocess.CalledProcessError as e:
+                        err = e.stderr.decode() if e.stderr else "unknown error"
+                        raise CobaltDownloadError(f"ffmpeg merge failed: {err}")
+                        
+                    return out_path
+                    
+                else:
+                    last_error = f"Unknown status '{status}' from {instance_url}"
+                    continue
+                    
+            except httpx.RequestError as e:
+                last_error = f"Connection failed to {instance_url}: {e}"
+                continue
+            except Exception as e:
+                last_error = f"Unexpected error with {instance_url}: {e}"
+                continue
+                
+    raise CobaltDownloadError(f"All Cobalt instances failed. Last error: {last_error}")
 
-    shortcode = match.group(1)
-    max_retries = 3
+async def _download_file(url: str, output_dir: str, filename: str = "") -> str:
+    import httpx
+    import os
+    import random
+    import string
+    from urllib.parse import urlparse
+    import re
+    
+    if not filename:
+        parsed = urlparse(url)
+        filename = os.path.basename(parsed.path)
+        if not filename:
+            filename = f"file_{''.join(random.choices(string.ascii_letters, k=8))}"
+            
+    # Clean filename
+    filename = re.sub(r'[^\w\-_\.]', '_', filename)
+    out_path = os.path.join(output_dir, filename)
+    
+    async with httpx.AsyncClient() as client:
+        async with client.stream("GET", url, timeout=120) as resp:
+            resp.raise_for_status()
+            with open(out_path, "wb") as f:
+                async for chunk in resp.aiter_bytes():
+                    f.write(chunk)
+                    
+    return out_path
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            post = instaloader.Post.from_shortcode(L.context, shortcode)
-            L.download_post(post, target=output_path)
-            return  # success
-        except instaloader.exceptions.LoginRequiredException:
-            raise RuntimeError(
-                "Yeh post private hai ya login chahiye! "
-                "INSTA_USERNAME / INSTA_PASSWORD env mein add kar."
-            )
-        except Exception as e:
-            err_str = str(e).lower()
-            is_rate_limit = (
-                "401" in err_str
-                or "please wait" in err_str
-                or "429" in err_str
-                or "checkpoint" in err_str
-            )
-            if is_rate_limit and attempt < max_retries:
-                wait = 60 * attempt          # 60s → 120s → 180s
-                print(f"Instagram rate-limit (attempt {attempt}/{max_retries}), waiting {wait}s…")
-                import time; time.sleep(wait)
-            else:
-                raise RuntimeError(f"Instagram download failed: {e}")
 
 
 def cleanup(path: str):
@@ -1067,21 +830,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.makedirs(download_dir, exist_ok=True)
 
     try:
-        loop = asyncio.get_running_loop()
-        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
-        
         file_path = None
-
-        def _resolve_ffmpeg() -> str | None:
-            path = shutil.which('ffmpeg')
-            if path:
-                return path
-            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
-                if os.path.exists(p):
-                    return p
-            return None
-
-        ffmpeg_bin = _resolve_ffmpeg()
 
         if replied_video:
             if replied_video.file_size > 20 * 1024 * 1024:
@@ -1097,8 +846,9 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             input_file = os.path.join(download_dir, f"input{ext}")
             await tg_file.download_to_drive(input_file)
             
-            mp3_path = os.path.join(download_dir, "extracted.mp3")
+            ffmpeg_bin = shutil.which('ffmpeg')
             if ffmpeg_bin:
+                mp3_path = os.path.join(download_dir, "extracted.mp3")
                 import subprocess
                 cmd = [ffmpeg_bin, '-y', '-i', input_file, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
                 subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1106,93 +856,36 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 raise RuntimeError("FFmpeg is missing on the system. Cannot extract audio.")
         else:
-            is_instagram = "instagram.com" in url
+            file_path = await download_via_cobalt(url, download_dir, audio_only=True)
 
-            async def _instaloader_to_mp3():
-                await asyncio.to_thread(download_instagram, url, download_dir)
-                mp4_files = glob.glob(f"{download_dir}/*.mp4")
-                if not mp4_files:
-                    raise RuntimeError("Instaloader failed to find downloaded video for MP3 extraction.")
-                video_path = mp4_files[0]
-                mp3_path = os.path.splitext(video_path)[0] + ".mp3"
-                if ffmpeg_bin:
-                    import subprocess
-                    cmd = [ffmpeg_bin, '-y', '-i', video_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
-                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    return mp3_path
-                print("⚠️ FFmpeg missing — sending Instagram video as audio (no mp3 extraction).")
-                return video_path
-
-            if is_instagram:
+        # Make sure it's MP3 if downloaded from URL, although Cobalt handles this via local-processing if it needs merging.
+        # Sometimes Cobalt just returns an audio file (.webm or .m4a) depending on format.
+        if file_path and not file_path.endswith('.mp3'):
+            ffmpeg_bin = shutil.which('ffmpeg')
+            if ffmpeg_bin:
+                mp3_path = os.path.splitext(file_path)[0] + ".mp3"
+                import subprocess
+                cmd = [ffmpeg_bin, '-y', '-i', file_path, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
                 try:
-                    file_path = await _instaloader_to_mp3()
-                except Exception as e:
-                    print(f"Instaloader failed for Instagram MP3, trying yt-dlp. Error: {e}")
-                    ig_cookies = _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE, default_domain=".instagram.com")
-                    file_path = await asyncio.to_thread(download_video, url, download_dir, True, ig_cookies, hook)
+                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                    file_path = mp3_path
+                except subprocess.CalledProcessError:
+                    pass
+
+        if file_path and os.path.exists(file_path):
+            if os.path.getsize(file_path) <= 500 * 1024 * 1024:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_AUDIO)
+                with open(file_path, 'rb') as audio:
+                    await source_msg.reply_audio(audio, caption="Enjoy your music! 🎵")
+                track_download(user.id)
             else:
-                yt_cookies = _ensure_netscape_cookies(YOUTUBE_COOKIES_FILE, default_domain=".youtube.com")
-                file_path = await asyncio.to_thread(download_video, url, download_dir, True, yt_cookies, hook)
-
-        # yt-dlp converts to .mp3 after postprocessing — glob for it
-        mp3_files = glob.glob(f"{download_dir}/*.mp3")
-        ffmpeg_path_check = shutil.which('ffmpeg')
-        if not ffmpeg_path_check:
-            for p in ['/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']:
-                if os.path.exists(p):
-                    ffmpeg_path_check = p
-                    break
-        ffmpeg_available = bool(ffmpeg_path_check)
-
-        if not mp3_files:
-            audio_candidates = []
-            if file_path and os.path.exists(file_path):
-                audio_candidates.append(file_path)
-            for candidate in glob.glob(f"{download_dir}/*"):
-                if os.path.splitext(candidate)[1].lower() in {".m4a", ".webm", ".opus", ".aac", ".mp4", ".mkv", ".wav", ".ogg"}:
-                    audio_candidates.append(candidate)
-
-            unique_candidates = []
-            seen = set()
-            for candidate in audio_candidates:
-                if candidate not in seen:
-                    seen.add(candidate)
-                    unique_candidates.append(candidate)
-            audio_candidates = unique_candidates
-
-            if ffmpeg_available and audio_candidates:
-                source_audio = audio_candidates[0]
-                mp3_path = os.path.splitext(source_audio)[0] + ".mp3"
-                if not os.path.exists(mp3_path):
-                    import subprocess
-                    cmd = [ffmpeg_path_check, '-y', '-i', source_audio, '-vn', '-acodec', 'libmp3lame', '-ab', '192k', mp3_path]
-                    try:
-                        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-                    except subprocess.CalledProcessError as exc:
-                        err = exc.stderr.decode(errors="ignore").strip() if exc.stderr else "Unknown error"
-                        raise RuntimeError(f"FFmpeg conversion failed: {err}") from exc
-                if os.path.exists(mp3_path):
-                    mp3_files = [mp3_path]
-            elif not ffmpeg_available and audio_candidates:
-                # No ffmpeg — pick best raw audio (m4a > opus > others) and ship as-is.
-                # Telegram plays m4a/ogg/opus natively in the audio player.
-                priority = {".m4a": 0, ".ogg": 1, ".opus": 2, ".aac": 3, ".webm": 4, ".wav": 5, ".mp4": 6, ".mkv": 7}
-                audio_candidates.sort(key=lambda p: priority.get(os.path.splitext(p)[1].lower(), 99))
-                mp3_files = [audio_candidates[0]]
-
-            if not mp3_files:
-                await source_msg.reply_text("❌ *Bhai MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
-                return
-
-        file_path = mp3_files[0]
-        if os.path.getsize(file_path) <= 500 * 1024 * 1024:
-            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_AUDIO)
-            with open(file_path, 'rb') as audio:
-                await source_msg.reply_audio(audio, caption="Enjoy your music! 🎵")
-            track_download(user.id)
+                await source_msg.reply_text("❌ *Bhai audio 500MB se badi hai!* 😔", parse_mode="Markdown")
         else:
-            await source_msg.reply_text("❌ *Bhai audio 500MB se badi hai!* 😔", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Bhai MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
 
+    except CobaltDownloadError as ce:
+        print(f"Cobalt MP3 Error: {ce}")
+        await source_msg.reply_text("❌ *Couldn't fetch that link right now, try again in a bit!* 🙏", parse_mode="Markdown")
     except Exception as e:
         print(f"MP3 Error: {e}")
         await source_msg.reply_text("❌ *Bhai error aagaya MP3 banane mein.* 🙏", parse_mode="Markdown")
@@ -1217,34 +910,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.makedirs(download_dir, exist_ok=True)
 
     try:
-        loop = asyncio.get_running_loop()
-        hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
-        
-        file_path = None
-        is_instagram = "instagram.com" in url
-        cookies_for_url = (
-            _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE, default_domain=".instagram.com")
-            if is_instagram
-            else _ensure_netscape_cookies(YOUTUBE_COOKIES_FILE, default_domain=".youtube.com")
-        )
-
-        if is_instagram:
-            # Try Instaloader first — yt-dlp's IG extractor often hits 401 even with cookies.
-            try:
-                await asyncio.to_thread(download_instagram, url, download_dir)
-                mp4_files = glob.glob(f"{download_dir}/*.mp4")
-                if mp4_files:
-                    file_path = mp4_files[0]
-                else:
-                    raise RuntimeError("Instaloader produced no MP4")
-            except Exception as e:
-                print(f"Instaloader failed for Instagram MP4, trying yt-dlp. Error: {e}")
-                file_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
-        else:
-            file_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
-
-        if not file_path or not os.path.exists(file_path):
-            file_path = _find_largest_video_file(download_dir)
+        file_path = await download_via_cobalt(url, download_dir)
 
         if file_path and os.path.exists(file_path):
             # Compress video if requested or if it's large
@@ -1289,6 +955,9 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await source_msg.reply_text("❌ *Bhai file nahi mili download ke baad.* 😔", parse_mode="Markdown")
 
+    except CobaltDownloadError as ce:
+        print(f"Cobalt MP4 Error: {ce}")
+        await source_msg.reply_text("❌ *Couldn't fetch that link right now, try again in a bit!* 🙏", parse_mode="Markdown")
     except Exception as e:
         print(f"MP4 Error: {e}")
         await source_msg.reply_text("❌ *Bhai error aagaya video download karne mein.* 🙏", parse_mode="Markdown")
@@ -1519,18 +1188,10 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         input_file = None
         if url:
-            loop = asyncio.get_running_loop()
-            hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
-            is_instagram = "instagram.com" in url
-            cookies_for_url = (
-                _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE) if is_instagram else YOUTUBE_COOKIES_FILE
-            )
-            video_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
-            if not video_path or not os.path.exists(video_path):
-                video_path = _find_largest_video_file(download_dir)
-            if not video_path:
+            file_path = await download_via_cobalt(url, download_dir)
+            if not file_path:
                 raise RuntimeError("Failed to download video from the link.")
-            input_file = video_path
+            input_file = file_path
         else:
             if replied_video.file_size > 20 * 1024 * 1024:
                 await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
@@ -1617,15 +1278,7 @@ async def trim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         input_file = None
         if url:
-            loop = asyncio.get_running_loop()
-            hook = progress_hook_factory(loop, context.bot, update.effective_chat.id, None, ChatAction.TYPING)
-            is_instagram = "instagram.com" in url
-            cookies_for_url = (
-                _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE) if is_instagram else YOUTUBE_COOKIES_FILE
-            )
-            file_path = await asyncio.to_thread(download_video, url, download_dir, False, cookies_for_url, hook)
-            if not file_path or not os.path.exists(file_path):
-                file_path = _find_largest_video_file(download_dir)
+            file_path = await download_via_cobalt(url, download_dir)
             if not file_path:
                 raise RuntimeError("Failed to download video from the link.")
             input_file = file_path
@@ -3917,12 +3570,7 @@ async def playlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 item_dir = os.path.join(download_dir, f"item_{idx}")
                 os.makedirs(item_dir, exist_ok=True)
-                ig_cookies = _ensure_netscape_cookies(INSTAGRAM_COOKIES_FILE, default_domain=".instagram.com")
-                yt_cookies = _ensure_netscape_cookies(YOUTUBE_COOKIES_FILE, default_domain=".youtube.com")
-                cookies_for_url = ig_cookies if "instagram.com" in entry_url else yt_cookies
-                fpath = await asyncio.to_thread(
-                    download_video, entry_url, item_dir, audio_only, cookies_for_url, None
-                )
+                fpath = await download_via_cobalt(entry_url, item_dir, audio_only)
                 if not fpath or not os.path.exists(fpath):
                     failed += 1
                     continue
@@ -4434,8 +4082,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 # ─── App Bootstrap ────────────────────────────────────────────────────────────
 
 async def post_init(application: Application):
-    setup_instaloader_session()
-    
     # Set bot commands in the menu
     commands = [
         ("start",      "Start the bot"),

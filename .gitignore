@@ -11,3 +11,4 @@ dl_*/
 __pycache__/
 *.py[cod]
 bot_stats.json
+cookies.json

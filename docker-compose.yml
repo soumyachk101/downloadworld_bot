@@ -1,0 +1,15 @@
+version: "3.8"
+services:
+  cobalt-api:
+    image: ghcr.io/imputnet/cobalt:11
+    container_name: cobalt-api
+    init: true
+    ports:
+      - "9000:9000"
+    environment:
+      - API_URL=http://localhost:9000/
+      - API_NAME=TG-Bot-Cobalt
+      - COOKIE_PATH=/cookies.json
+    volumes:
+      - ./cookies.json:/cookies.json:ro
+    restart: unless-stopped
