@@ -30,7 +30,7 @@ from telegram.ext import (
 
 
 import yt_dlp
-from groq import AsyncGroq
+import httpx
 from deep_translator import GoogleTranslator
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import timedelta
@@ -38,15 +38,10 @@ from datetime import timedelta
 # ─── Load Env ────────────────────────────────────────────────────────────────
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-APIFY_TOKEN = os.getenv("APIFY_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# ─── Groq Client ─────────────────────────────────────────────────────────────
-groq_client = None
-if GROQ_API_KEY:
-    groq_client = AsyncGroq(api_key=GROQ_API_KEY)
-else:
-    print("Warning: GROQ_API_KEY missing. AI features disabled.")
+if not GEMINI_API_KEY:
+    print("Warning: GEMINI_API_KEY missing. AI features disabled.")
 
 # ─── Stats Persistence ───────────────────────────────────────────────────────
 import json
@@ -441,20 +436,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── AI ──────────────────────────────────────────────────────────────────────
 
 async def ask_ai(prompt: str, system_prompt: str) -> str:
-    if not groq_client:
-        return "Bhai GROQ_API_KEY missing hai! Railway Dashboard mein add kar do. 🙏"
+    if not GEMINI_API_KEY:
+        return "Bhai GEMINI_API_KEY missing hai! Railway Dashboard mein add kar do. 🙏"
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    payload = {
+        "systemInstruction": {
+            "parts": [{"text": system_prompt}]
+        },
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
+    
     try:
-        chat_completion = await groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": prompt}
-            ],
-            model="llama-3.1-8b-instant",
-        )
-        return chat_completion.choices[0].message.content
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, json=payload, timeout=30.0)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        print(f"Groq API Error: {e}")
-        return "Bhai Groq AI mein thodi dikkat aa rahi hai. Baad mein try karna! 🙏"
+        print(f"Gemini API Error: {e}")
+        return "Bhai Gemini AI mein thodi dikkat aa rahi hai. Baad mein try karna! 🙏"
 
 async def handle_ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str, user_text: str):
     prompts = {
@@ -4160,8 +4163,8 @@ def main():
     if not BOT_TOKEN:
         print("❌ BOT_TOKEN missing! Add it to environment variables.")
         return
-    if not GROQ_API_KEY:
-        print("⚠️  GROQ_API_KEY missing — AI features disabled, bot will still run.")
+    if not GEMINI_API_KEY:
+        print("⚠️  GEMINI_API_KEY missing — AI features disabled, bot will still run.")
 
     app = (
         Application.builder()
