@@ -170,7 +170,9 @@ def setup_instaloader_session():
 
 # ─── Stats Persistence ───────────────────────────────────────────────────────
 import json
+import tempfile
 STATS_FILE = "bot_stats.json"
+_stats_lock = threading.Lock()  # Use threading lock since stats are called from threads
 
 def load_stats():
     try:
@@ -182,17 +184,36 @@ def load_stats():
     return {"total_downloads": 0, "users": {}}
 
 def save_stats(stats):
-    with open(STATS_FILE, "w") as f:
-        json.dump(stats, f)
+    """Atomically write stats to avoid corruption on concurrent writes."""
+    tmp_path = STATS_FILE + ".tmp"
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(stats, f)
+        # Atomic rename (on most filesystems)
+        if sys.platform == "win32":
+            # Windows: remove existing file first if it exists
+            if os.path.exists(STATS_FILE):
+                os.remove(STATS_FILE)
+        os.replace(tmp_path, STATS_FILE)
+    except Exception as e:
+        print(f"⚠️ Failed to save stats atomically: {e}")
+        # Fallback to direct write
+        try:
+            with open(STATS_FILE, "w") as f:
+                json.dump(stats, f)
+        except Exception as e2:
+            print(f"⚠️ Fallback stats save also failed: {e2}")
 
 def track_download(user_id):
-    stats = load_stats()
-    stats["total_downloads"] += 1
-    uid = str(user_id)
-    if uid not in stats["users"]:
-        stats["users"][uid] = 0
-    stats["users"][uid] += 1
-    save_stats(stats)
+    """Thread-safe tracking of downloads with lock to prevent race conditions."""
+    with _stats_lock:
+        stats = load_stats()
+        stats["total_downloads"] += 1
+        uid = str(user_id)
+        if uid not in stats["users"]:
+            stats["users"][uid] = 0
+        stats["users"][uid] += 1
+        save_stats(stats)
 
 def extract_contact_info(text: str):
     if not text:
@@ -214,14 +235,15 @@ def extract_contact_info(text: str):
     # inside @handles, dates, hashtag counts, and credit-card-shaped noise.
     phone_pattern = re.compile(
         r"(?<![@\w])"                          # don't start mid-word
-        r"(?:\+\d{1,3}[\s.\-]?)?"            # optional +CC
-        r"(?:\(\d{2,5}\)|\d{2,5})[\s.\-]?" # area code (parens or plain)
-        r"\d{3,5}"                              # first block
-        r"(?:[\s.\-]?\d{3,5})"                # second block
-        r"(?:[\s.\-]?\d{2,5})?"               # optional third block
+        r"(\+\d{1,3}[\s.\-]?)?"               # optional +CC (captured for full match)
+        r"(\(\d{2,5}\)|\d{2,5})[\s.\-]?"     # area code (parens or plain)
+        r"(\d{3,5})"                           # first block
+        r"([\s.\-]?\d{3,5})"                   # second block
+        r"([\s.\-]?\d{2,5})?"                  # optional third block
         r"(?!\d)"                               # not followed by more digits
     )
-    phones_found = phone_pattern.findall(text)
+    # Use finditer to get full match, not just captured groups
+    phones_found = [m.group(0) for m in phone_pattern.finditer(text)]
 
     valid_phones = []
     for ph in phones_found:
@@ -256,6 +278,26 @@ def escape_markdown(text: str) -> str:
     for char in escape_chars:
         text = text.replace(char, f'\\{char}')
     return text
+
+async def safe_reply_text(message, text, parse_mode="Markdown", **kwargs):
+    """Safely send a message with Markdown, falling back to plain text if parsing fails."""
+    try:
+        return await message.reply_text(text, parse_mode=parse_mode, **kwargs)
+    except BadRequest as e:
+        if "can't parse" in str(e).lower() or "entities" in str(e).lower():
+            print(f"⚠️ Markdown parse failed, retrying as plain text: {e}")
+            return await message.reply_text(text, parse_mode=None, **kwargs)
+        raise
+
+async def safe_edit_text(message, text, parse_mode="Markdown", **kwargs):
+    """Safely edit a message with Markdown, falling back to plain text if parsing fails."""
+    try:
+        return await message.edit_text(text, parse_mode=parse_mode, **kwargs)
+    except BadRequest as e:
+        if "can't parse" in str(e).lower() or "entities" in str(e).lower():
+            print(f"⚠️ Markdown parse failed in edit, retrying as plain text: {e}")
+            return await message.edit_text(text, parse_mode=None, **kwargs)
+        raise
 
 # ─── Scheduler ───────────────────────────────────────────────────────────────
 scheduler = AsyncIOScheduler()
@@ -1043,7 +1085,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if replied_video:
             if replied_video.file_size > 20 * 1024 * 1024:
-                await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram bots can only download files up to 20MB. 😔", parse_mode="Markdown")
                 cleanup(download_dir)
                 return
                 
