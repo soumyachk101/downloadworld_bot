@@ -183,27 +183,27 @@ scheduler = AsyncIOScheduler()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    first_name = user.first_name if user and user.first_name else "Bhai"
+    first_name = user.first_name if user and user.first_name else "Hey"
     # Escape markdown special characters in first_name
     clean_name = re.sub(r'[*_`]', '', first_name)
     welcome_text = (
         f"✨ *━━━━━━━━━━━━━━━━━━━━━━━*\n"
         f"     ⚡ *DOWNLOAD WORLD v3.0* ⚡\n"
         f"✨ *━━━━━━━━━━━━━━━━━━━━━━━*\n\n"
-        f"👋 *Hey {clean_name}! Welcome to the party!*\n"
-        f"I am your ultimate media companion and AI processor. Just paste a link or run any command to begin! 🪄\n\n"
-        f"📥 *AUTOMATIC DOWNLOADS:*\n"
+        f"👋 *Hello {clean_name}! Welcome aboard!*\n"
+        f"I am your all-in-one media companion and AI assistant. Simply send me any link or use a command to get started! 🪄\n\n"
+        f"📥 *AUTOMATIC MEDIA DOWNLOADS:*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🚀 *Just send any link* (YouTube, Reels, TikTok, Twitter, Facebook, etc.).\n"
-        f"I will automatically download and deliver **both** the Video (MP4) and Audio (MP3) back-to-back! ⚡\n\n"
+        f"🚀 *Send any link* (YouTube, Instagram Reels, TikTok, Twitter, Facebook, etc.)\n"
+        f"I will automatically fetch and deliver both the Video (MP4) and Audio (MP3) formats instantly! ⚡\n\n"
         f"🌟 *ADVANCED TOOLKIT HIGHLIGHTS:*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔊 `/effect` — Add DSP voice effects to audio/video!\n"
-        f"📝 `/transcribe` — Transcribe voice/audio using AI Whisper!\n"
-        f"📉 `/compress` — Smart video compression settings!\n"
-        f"ℹ️ `/iginfo` — Scrape Instagram details & contact info!\n"
-        f"📞 `/extract` — Scan & extract phone numbers from text!\n\n"
-        f"_Tap the buttons below to explore all features!_ 👇"
+        f"🔊 `/effect` — Apply DSP voice effects to audio and video files!\n"
+        f"📝 `/transcribe` — Convert voice notes and audio to text using AI!\n"
+        f"📉 `/compress` — Advanced video compression with custom presets!\n"
+        f"ℹ️ `/iginfo` — Extract Instagram profile details and contact info!\n"
+        f"📞 `/extract` — Scan and extract phone numbers from any text!\n\n"
+        f"_Tap the buttons below to explore the complete feature set!_ 👇"
     )
     import urllib.parse
     bot_username = context.bot.username
@@ -382,12 +382,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
 
     mode_map = {
-        "mode_roast":   ("roast",   "Naam bata jisko roast karna hai! 🔥"),
+        "mode_roast":   ("roast",   "Tell me the name of the person you want to roast! 🔥"),
         "mode_shayari": ("shayari", "Kis topic pe shayari likhun? 📝"),
         "mode_rap":     ("rap",     "Rap ka topic bata, aag laga denge! 🔥🎤"),
         "mode_fortune": ("fortune", "Naam bata, tera bhavishya dekhta hoon! 🔮"),
         "mode_story":   ("story",   "Kis topic pe story likhun? 📝"),
-        "mode_recipe":  ("recipe",  "Kaunsi recipe seekhni hai? Ingredients batao! 🍕"),
+        "mode_recipe":  ("recipe",  "Which recipe do you want to learn? Tell me the ingredients! 🍕"),
     }
 
     if query.data == "show_help":
@@ -419,7 +419,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎤 *Rap*  →  Desi underground bars\n"
             "🔮 *Fortune*  →  Funny astrology\n"
             "📝 *Story*  →  Quick desi tale\n"
-            "🍕 *Recipe*  →  Bhai-style cooking\n"
+            "🍕 *Recipe*  →  Hey-style cooking\n"
         )
         await query.edit_message_text(
             ai_text,
@@ -437,7 +437,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_ai(prompt: str, system_prompt: str) -> str:
     if not GEMINI_API_KEY:
-        return "Bhai GEMINI_API_KEY missing hai! Railway Dashboard mein add kar do. 🙏"
+        return "GEMINI_API_KEY is missing! Please configure it in your environment variables. 🙏"
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     payload = {
@@ -457,24 +457,24 @@ async def ask_ai(prompt: str, system_prompt: str) -> str:
             return data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
         print(f"Gemini API Error: {e}")
-        return "Bhai Gemini AI mein thodi dikkat aa rahi hai. Baad mein try karna! 🙏"
+        return "The Gemini AI is currently unavailable. Please try again later! 🙏"
 
 async def handle_ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str, user_text: str):
     prompts = {
         "roast":   {
-            "system": "You are a savage, funny Indian roaster. Roast the person named in the prompt in exactly 4 lines using Hinglish. Be hilarious but don't cross community guidelines.",
+            "system": "You are a savage, funny Indian roaster. Roast the person named in the prompt in exactly 4 lines in English. Be hilarious but don't cross community guidelines.",
             "user":   f"Roast this person: {user_text}"
         },
         "shayari": {
-            "system": "You are a master Mirza Ghalib style poet but you write in Hinglish. Write a 4 line beautiful or funny shayari about the topic given.",
+            "system": "You are a master Mirza Ghalib style poet but you write in Hinglish. Write a beautiful 4-line poem about the topic given.",
             "user":   f"Topic: {user_text}"
         },
         "rap":     {
-            "system": "You are an Indian underground rapper like Divine or Emiway. Write an energetic desi Hindi rap with rhymes in exactly 8 lines using Hinglish about the given topic.",
+            "system": "You are an underground rapper. Write an energetic rap with rhymes in exactly 8 lines about the given topic.",
             "user":   f"Topic: {user_text}"
         },
         "fortune": {
-            "system": "You are a funny Indian jyotishi (astrologer). Tell a humorous 3-4 line fortune in Hinglish for the given name. Make it absurd and funny.",
+            "system": "You are a funny Indian jyotishi (astrologer). Tell a humorous 3-4 line fortune for the given name. Make it absurd and funny.",
             "user":   f"Name: {user_text}"
         },
         "story":   {
@@ -482,7 +482,7 @@ async def handle_ai_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, mod
             "user":   f"Topic: {user_text}"
         },
         "recipe":  {
-            "system": "You are a Desi Chef. Provide a simple and tasty recipe in Hinglish with clear steps based on the ingredients or dish name provided. Use a friendly, 'Bhai' style tone.",
+            "system": "You are a Desi Chef. Provide a simple and tasty recipe in Hinglish with clear steps based on the ingredients or dish name provided. Use a friendly, 'Hey' style tone.",
             "user":   f"Recipe/Ingredients: {user_text}"
         },
     }
@@ -820,7 +820,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not url and not replied_video:
         await source_msg.reply_text(
-            "❌ *Bhai use kaise karein?*\n\n"
+            "❌ *Hey use kaise karein?*\n\n"
             "Format:\n"
             "• `/mp3 <link>` — Download MP3 from a URL\n"
             "• Reply to any video file with `/mp3` to extract its audio directly!",
@@ -837,7 +837,7 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if replied_video:
             if replied_video.file_size > 20 * 1024 * 1024:
-                await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram bots can only download files up to 20MB. 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey video 20MB se badi hai!* Telegram bots can only download files up to 20MB. 😔", parse_mode="Markdown")
                 cleanup(download_dir)
                 return
                 
@@ -882,16 +882,16 @@ async def mp3_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await source_msg.reply_audio(audio, caption="Enjoy your music! 🎵")
                 track_download(user.id)
             else:
-                await source_msg.reply_text("❌ *Bhai audio 500MB se badi hai!* 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey audio 500MB se badi hai!* 😔", parse_mode="Markdown")
         else:
-            await source_msg.reply_text("❌ *Bhai MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Hey MP3 nahi bani. Link check kar!* 😔", parse_mode="Markdown")
 
     except CobaltDownloadError as ce:
         print(f"Cobalt MP3 Error: {ce}")
         await source_msg.reply_text("❌ *Couldn't fetch that link right now, try again in a bit!* 🙏", parse_mode="Markdown")
     except Exception as e:
         print(f"MP3 Error: {e}")
-        await source_msg.reply_text("❌ *Bhai error aagaya MP3 banane mein.* 🙏", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey error aagaya MP3 banane mein.* 🙏", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -902,7 +902,7 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai link toh bhej!*\n\nExample: `/mp4 https://youtube.com/watch?v=xxx`",
+            "❌ *Hey link toh bhej!*\n\nExample: `/mp4 https://youtube.com/watch?v=xxx`",
             parse_mode="Markdown"
         )
         return
@@ -952,18 +952,18 @@ async def mp4_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     track_download(user.id)
                 except Exception as upload_err:
                     print(f"❌ Upload failed: {upload_err}")
-                    await source_msg.reply_text(f"❌ *Bhai upload fail ho gaya:* `{upload_err}`", parse_mode="Markdown")
+                    await source_msg.reply_text(f"❌ *Hey upload fail ho gaya:* `{upload_err}`", parse_mode="Markdown")
             else:
-                await source_msg.reply_text("❌ *Bhai video 500MB se badi hai!* 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey video 500MB se badi hai!* 😔", parse_mode="Markdown")
         else:
-            await source_msg.reply_text("❌ *Bhai file nahi mili download ke baad.* 😔", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Hey file nahi mili download ke baad.* 😔", parse_mode="Markdown")
 
     except CobaltDownloadError as ce:
         print(f"Cobalt MP4 Error: {ce}")
         await source_msg.reply_text("❌ *Couldn't fetch that link right now, try again in a bit!* 🙏", parse_mode="Markdown")
     except Exception as e:
         print(f"MP4 Error: {e}")
-        await source_msg.reply_text("❌ *Bhai error aagaya video download karne mein.* 🙏", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey error aagaya video download karne mein.* 🙏", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1017,7 +1017,7 @@ async def thumb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai link toh bhej!*\n\nExample: `/thumb https://youtu.be/xxx`",
+            "❌ *Hey link toh bhej!*\n\nExample: `/thumb https://youtu.be/xxx`",
             parse_mode="Markdown",
         )
         return
@@ -1083,7 +1083,7 @@ async def subs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai link toh bhej!*\n\n"
+            "❌ *Hey link toh bhej!*\n\n"
             "Example: `/subs https://youtu.be/xxx`\n"
             "Optional language: `/subs <link> hi`",
             parse_mode="Markdown",
@@ -1176,7 +1176,7 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
         if not replied_video:
             await source_msg.reply_text(
-                "❌ *Bhai usage check karo!*\n\n"
+                "❌ *Hey usage check karo!*\n\n"
                 "• `/gif <link> [duration]`\n"
                 "• Reply to any video with `/gif [duration]`\n\n"
                 "Default duration: `8` seconds.",
@@ -1197,7 +1197,7 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             input_file = file_path
         else:
             if replied_video.file_size > 20 * 1024 * 1024:
-                await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
                 return
             
             tg_file = await context.bot.get_file(replied_video.file_id)
@@ -1229,7 +1229,7 @@ async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         track_download(user.id)
     except Exception as e:
         print(f"GIF Error: {e}")
-        await source_msg.reply_text("❌ *Bhai GIF nahi bani. Link/length check kar.* 🙏", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey GIF nahi bani. Link/length check kar.* 🙏", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1245,7 +1245,7 @@ async def trim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if len(context.args) < 2:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Format:\n"
             "• `/trim <start_time> <end_time> <link>`\n"
             "• Reply to a video with `/trim <start_time> <end_time>`\n\n"
@@ -1271,7 +1271,7 @@ async def trim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 replied_video = reply.document
                 
         if not replied_video:
-            await source_msg.reply_text("❌ *Bhai koi link nahi mila aur na hi kisi video ko reply kiya!*", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Hey koi link nahi mila aur na hi kisi video ko reply kiya!*", parse_mode="Markdown")
             return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -1288,7 +1288,7 @@ async def trim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             # Replied to Telegram video
             if replied_video.file_size > 20 * 1024 * 1024:
-                await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
                 cleanup(download_dir)
                 return
             
@@ -1336,7 +1336,7 @@ async def trim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Trim Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai trim nahi ho paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey trim nahi ho paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1347,7 +1347,7 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any Audio/MP3 file with:\n"
             "`/tag Title | Artist | Album` (Album is optional)\n\n"
             "Example:\n"
@@ -1364,12 +1364,12 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_audio = reply.document
 
     if not target_audio:
-        await source_msg.reply_text("❌ *Bhai kisi audio file ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi audio file ko reply karo!*", parse_mode="Markdown")
         return
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai tags specify karo!*\n\n"
+            "❌ *Hey tags specify karo!*\n\n"
             "Format: `/tag Title | Artist | Album` (use `|` as separator)",
             parse_mode="Markdown"
         )
@@ -1383,7 +1383,7 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     album = parts[2] if len(parts) > 2 else ""
 
     if not title:
-        await source_msg.reply_text("❌ *Bhai title specify karna zaroori hai!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey title specify karna zaroori hai!*", parse_mode="Markdown")
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -1392,7 +1392,7 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if target_audio.file_size > 20 * 1024 * 1024:
-            await source_msg.reply_text("❌ *Bhai audio file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Hey audio file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
             cleanup(download_dir)
             return
 
@@ -1455,7 +1455,7 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Tag Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai tags edit nahi ho paye:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey tags edit nahi ho paye:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1466,7 +1466,7 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai username ya link toh batao!*\n\n"
+            "❌ *Hey username ya link toh batao!*\n\n"
             "Format:\n"
             "• `/iginfo <username>`\n"
             "• `/iginfo <profile_link>`\n\n"
@@ -1597,14 +1597,14 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except instaloader.exceptions.ProfileNotExistsException:
         await source_msg.reply_text(
-            f"❌ *Bhai yeh Instagram profile exist nahi karti!*\n\n"
+            f"❌ *Hey yeh Instagram profile exist nahi karti!*\n\n"
             f"Aapne diya: `{username}`. Please check if the username is correct.",
             parse_mode="Markdown"
         )
     except instaloader.exceptions.LoginRequiredException:
         await source_msg.reply_text(
             "🔒 *Instagram Login Required!*\n\n"
-            "Bhai, Instagram checks require active account session. Please add "
+            "Hey, Instagram checks require active account session. Please add "
             "`INSTA_USERNAME` & `INSTA_PASSWORD` or `INSTAGRAM_COOKIES_FILE` in your "
             "`.env` (Railway Dashboard) to enable this feature!",
             parse_mode="Markdown"
@@ -1613,14 +1613,14 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Instagram Connection Error: {conn_err}")
         await source_msg.reply_text(
             "⚠️ *Instagram Connection Limit / Rate Limit (429)!*\n\n"
-            "Bhai, Instagram has blocked anonymous requests temporarily. "
+            "Hey, Instagram has blocked anonymous requests temporarily. "
             "Please configure your login details or try again later.",
             parse_mode="Markdown"
         )
     except instaloader.exceptions.PrivateProfileNotFollowedException:
         await source_msg.reply_text(
             f"🔒 *@{username} is private.*\n\n"
-            "Bhai, private accounts ka data sirf unke approved followers ko "
+            "Hey, private accounts ka data sirf unke approved followers ko "
             "milta hai. Public info (name, bio, follower count) ke liye "
             "follow request bhejo!",
             parse_mode="Markdown"
@@ -1628,14 +1628,14 @@ async def iginfo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except (asyncio.TimeoutError, TimeoutError):
         await source_msg.reply_text(
             "⏱️ *Instagram ne respond nahi kiya 45s mein.*\n\n"
-            "Bhai, shayad rate-limit ya slow network hai. Thodi der baad "
+            "Hey, shayad rate-limit ya slow network hai. Thodi der baad "
             "dobara try karo ya cookies refresh karo.",
             parse_mode="Markdown"
         )
     except Exception as e:
         print(f"Instagram Info Error: {type(e).__name__}: {e}")
         await source_msg.reply_text(
-            f"❌ *Bhai details nahi nikal paye:* `{type(e).__name__}: {e}`",
+            f"❌ *Hey details nahi nikal paye:* `{type(e).__name__}: {e}`",
             parse_mode="Markdown"
         )
     finally:
@@ -1657,7 +1657,7 @@ async def extract_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     if not text_to_parse:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Format:\n"
             "• `/extract <text>`\n"
             "• Reply to a text message with `/extract`",
@@ -1681,7 +1681,7 @@ async def extract_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clean_urls.append(u_clean)
 
     if not emails and not phones and not unique_handles and not clean_urls:
-        await source_msg.reply_text("❌ *Bhai is text mein koi details (phone, email, handles, URLs) nahi mile!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey is text mein koi details (phone, email, handles, URLs) nahi mile!*", parse_mode="Markdown")
         return
 
     result = "🔎 *Extracted Details:*\n━━━━━━━━━━━━━━━━━━━━━\n"
@@ -1717,7 +1717,7 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message:
         await source_msg.reply_text(
-            "❌ *Bhai kisi photo ya video ko reply karo!*\n\n"
+            "❌ *Hey kisi photo ya video ko reply karo!*\n\n"
             "Reply to an image or video with `/sticker` to convert it to a sticker!",
             parse_mode="Markdown"
         )
@@ -1734,7 +1734,7 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if reply.photo:
             photo = reply.photo[-1]  # Get highest resolution
             if photo.file_size > 10 * 1024 * 1024:
-                await source_msg.reply_text("❌ *Bhai photo 10MB se badi hai!* Stickers have size limits. 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey photo 10MB se badi hai!* Stickers have size limits. 😔", parse_mode="Markdown")
                 return
 
             file = await context.bot.get_file(photo.file_id)
@@ -1755,7 +1755,7 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if process.returncode != 0:
                 err_msg = stderr.decode(errors="ignore").strip() if stderr else "Unknown error"
                 print(f"Sticker (photo) ffmpeg error: {err_msg}")
-                await source_msg.reply_text("❌ *Bhai sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
                 return
 
             if os.path.exists(output_path):
@@ -1764,13 +1764,13 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await source_msg.reply_sticker(sticker=sticker)
                 await source_msg.reply_text("✅ *Sticker created!* 🎨", parse_mode="Markdown")
             else:
-                await source_msg.reply_text("❌ *Bhai sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
 
         # Check for video
         elif reply.video or reply.animation:
             media = reply.video or reply.animation
             if media.file_size > 10 * 1024 * 1024:
-                await source_msg.reply_text("❌ *Bhai video 10MB se badi hai!* Stickers have size limits. 😔", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey video 10MB se badi hai!* Stickers have size limits. 😔", parse_mode="Markdown")
                 return
 
             file = await context.bot.get_file(media.file_id)
@@ -1791,7 +1791,7 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if process.returncode != 0:
                 err_msg = stderr.decode(errors="ignore").strip() if stderr else "Unknown error"
                 print(f"Sticker (video) ffmpeg error: {err_msg}")
-                await source_msg.reply_text("❌ *Bhai sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
                 return
 
             if os.path.exists(output_path):
@@ -1800,13 +1800,13 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await source_msg.reply_sticker(sticker=sticker)
                 await source_msg.reply_text("✅ *Animated sticker created!* 🎨", parse_mode="Markdown")
             else:
-                await source_msg.reply_text("❌ *Bhai sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey sticker convert nahi ho paya!* FFmpeg error.", parse_mode="Markdown")
         else:
-            await source_msg.reply_text("❌ *Bhai sirf photo ya video ko sticker mein convert kar sakte ho!*", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Hey sirf photo ya video ko sticker mein convert kar sakte ho!*", parse_mode="Markdown")
 
     except Exception as e:
         print(f"Sticker conversion error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai sticker create nahi ho paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey sticker create nahi ho paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1816,13 +1816,13 @@ async def caption_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     source_msg = update.effective_message
     user = update.effective_user
 
-    if not groq_client:
-        await source_msg.reply_text("❌ *Bhai GROQ_API_KEY missing hai!* AI features disabled.", parse_mode="Markdown")
+    if not GEMINI_API_KEY:
+        await source_msg.reply_text("❌ *Hey GEMINI_API_KEY missing hai!* AI features disabled.", parse_mode="Markdown")
         return
 
     if not source_msg.reply_to_message or not source_msg.reply_to_message.photo:
         await source_msg.reply_text(
-            "❌ *Bhai kisi photo ko reply karo!*\n\n"
+            "❌ *Hey kisi photo ko reply karo!*\n\n"
             "Reply to a photo with `/caption` to generate an AI caption!",
             parse_mode="Markdown"
         )
@@ -1836,7 +1836,7 @@ async def caption_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo = reply.photo[-1]
         
         if photo.file_size > 20 * 1024 * 1024:
-            await source_msg.reply_text("❌ *Bhai photo 20MB se badi hai!*", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Hey photo 20MB se badi hai!*", parse_mode="Markdown")
             return
 
         download_dir = f"downloads_caption_{user.id}_{source_msg.message_id}"
@@ -1869,124 +1869,26 @@ async def caption_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
         ]
 
-        response = await groq_client.chat.completions.create(
-            model="llama-3.2-11b-vision-preview",
-            messages=messages,
-            max_tokens=200,
-            temperature=0.7
-        )
-
-        caption_text = response.choices[0].message.content
-
-        # Send the photo with AI-generated caption
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
-        with open(image_path, 'rb') as photo_file:
-            await source_msg.reply_photo(
-                photo=photo_file,
-                caption=f"✨ *AI Generated Caption:*\n\n{caption_text}",
-                parse_mode="Markdown"
-            )
-
-    except Exception as e:
-        print(f"Caption generation error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai caption generate nahi ho paya:* `{e}`", parse_mode="Markdown")
-    finally:
-        cleanup(download_dir)
-
-
-async def ocr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Extract text from images using OCR."""
-    source_msg = update.effective_message
-    user = update.effective_user
-
-    if not source_msg.reply_to_message or not source_msg.reply_to_message.photo:
-        await source_msg.reply_text(
-            "❌ *Bhai kisi photo ko reply karo!*\n\n"
-            "Reply to a photo with `/ocr` to extract text from it!",
-            parse_mode="Markdown"
-        )
-        return
-
-    try:
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-
-        # Get the photo
-        reply = source_msg.reply_to_message
-        photo = reply.photo[-1]
-        
-        if photo.file_size > 20 * 1024 * 1024:
-            await source_msg.reply_text("❌ *Bhai photo 20MB se badi hai!*", parse_mode="Markdown")
-            return
-
-        download_dir = f"downloads_ocr_{user.id}_{source_msg.message_id}"
-        os.makedirs(download_dir, exist_ok=True)
-        
-        file = await context.bot.get_file(photo.file_id)
-        image_path = os.path.join(download_dir, "image.jpg")
-        await file.download_to_drive(image_path)
-
-        # Try using pytesseract for OCR
-        try:
-            from PIL import Image
-            import pytesseract
-
-            # Open image and extract text
-            img = Image.open(image_path)
-            # 'hin' language pack may not be installed on the host — fall back to eng
-            # so a single missing tessdata file does not break OCR entirely.
-            try:
-                extracted_text = pytesseract.image_to_string(img, lang='eng+hin')
-            except pytesseract.TesseractError:
-                extracted_text = pytesseract.image_to_string(img, lang='eng')
-
-            if extracted_text.strip():
-                result = f"📝 *Extracted Text:*\n━━━━━━━━━━━━━━━━━━━━━\n\n{escape_markdown(extracted_text)}"
-                await source_msg.reply_text(result, parse_mode="Markdown")
-            else:
-                await source_msg.reply_text("❌ *Bhai is photo mein koi text nahi mila!*", parse_mode="Markdown")
-
-        except ImportError:
-            # Fallback: Use Groq Vision AI
-            if not groq_client:
-                await source_msg.reply_text("❌ *Bhai OCR libraries missing aur GROQ_API_KEY bhi nahi hai!*", parse_mode="Markdown")
-                return
-
-            import base64
-            with open(image_path, 'rb') as img_file:
-                image_base64 = base64.b64encode(img_file.read()).decode('utf-8')
-
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Extract all visible text from this image. Return only the text, nothing else."
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"
-                            }
-                        }
+        payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": "Extract all the text visible in this image accurately. Preserve formatting where possible. Only return the extracted text, no explanations."},
+                        {"inlineData": {"mimeType": "image/jpeg", "data": image_base64}}
                     ]
-                }
-            ]
-
-            response = await groq_client.chat.completions.create(
-                model="llama-3.2-11b-vision-preview",
-                messages=messages,
-                max_tokens=1000,
-                temperature=0.1
-            )
-
-            extracted_text = response.choices[0].message.content
+                }]
+            }
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload, timeout=30.0)
+                resp.raise_for_status()
+                data = resp.json()
+                extracted_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
             result = f"📝 *Extracted Text (AI):*\n━━━━━━━━━━━━━━━━━━━━━\n\n{escape_markdown(extracted_text)}"
             await source_msg.reply_text(result, parse_mode="Markdown")
 
     except Exception as e:
         print(f"OCR error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai text extract nahi ho paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Failed to extract text:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -1996,8 +1898,8 @@ async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     source_msg = update.effective_message
     user = update.effective_user
 
-    if not groq_client:
-        await source_msg.reply_text("❌ *Bhai GROQ_API_KEY missing hai!* AI features disabled.", parse_mode="Markdown")
+    if not GEMINI_API_KEY:
+        await source_msg.reply_text("❌ *Hey GEMINI_API_KEY missing hai!* AI features disabled.", parse_mode="Markdown")
         return
 
     # Get text from command or replied message
@@ -2013,7 +1915,7 @@ async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not text_to_speak:
         await source_msg.reply_text(
-            "❌ *Bhai text toh do!*\n\n"
+            "❌ *Hey text toh do!*\n\n"
             "Format:\n"
             "• `/tts <text>`\n"
             "• Reply to a text message with `/tts`",
@@ -2022,7 +1924,7 @@ async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if len(text_to_speak) > 1000:
-        await source_msg.reply_text("❌ *Bhai text 1000 characters se zyada hai!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *The provided text exceeds the 1000 character limit!*", parse_mode="Markdown")
         return
 
     try:
@@ -2032,28 +1934,20 @@ async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         os.makedirs(download_dir, exist_ok=True)
         output_path = os.path.join(download_dir, "speech.mp3")
 
-        # Use Groq TTS API
-        response = await groq_client.audio.speech.create(
-            model="playai-tts",
-            voice="Fritz-PlayAI",
-            response_format="mp3",
-            input=text_to_speak
-        )
-
-        # Save the audio file — Groq's AsyncBinaryAPIResponse uses write_to_file,
-        # not the (legacy/sync-only) stream_to_file name used by OpenAI's client.
-        response.write_to_file(output_path)
+        import gtts
+        tts = gtts.gTTS(text=text_to_speak, lang='en')
+        tts.save(output_path)
 
         if os.path.exists(output_path):
             with open(output_path, 'rb') as audio_file:
                 await source_msg.reply_voice(voice=audio_file, duration=0)
             await source_msg.reply_text("✅ *Speech generated!* 🔊", parse_mode="Markdown")
         else:
-            await source_msg.reply_text("❌ *Bhai speech generate nahi ho paya!*", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Hey speech generate nahi ho paya!*", parse_mode="Markdown")
 
     except Exception as e:
         print(f"TTS error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai speech generate nahi ho paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey speech generate nahi ho paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -2083,7 +1977,7 @@ async def notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Show all notes
         if not all_notes[user_id]:
             await source_msg.reply_text(
-                "📝 *Bhai tumhare paas koi notes nahi hai!*\n\n"
+                "📝 *Hey tumhare paas koi notes nahi hai!*\n\n"
                 "Use `/notes <text>` to save a new note.",
                 parse_mode="Markdown"
             )
@@ -2114,9 +2008,9 @@ async def notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode="Markdown"
                 )
             else:
-                await source_msg.reply_text("❌ *Bhai invalid note number!*", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey invalid note number!*", parse_mode="Markdown")
         except ValueError:
-            await source_msg.reply_text("❌ *Bhai valid number do!* Example: `/notes delete 1`", parse_mode="Markdown")
+            await source_msg.reply_text("❌ *Hey valid number do!* Example: `/notes delete 1`", parse_mode="Markdown")
         return
 
     # Check for clear command
@@ -2151,13 +2045,13 @@ async def transcribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     source_msg = update.effective_message
     user = update.effective_user
 
-    if not groq_client:
-        await source_msg.reply_text("❌ *Bhai GROQ_API_KEY missing hai!* AI features disabled. Please add it to your environment variables. 🙏", parse_mode="Markdown")
+    if not GEMINI_API_KEY:
+        await source_msg.reply_text("❌ *Hey GEMINI_API_KEY missing hai!* AI features disabled. Please add it to your environment variables. 🙏", parse_mode="Markdown")
         return
 
     if not source_msg.reply_to_message:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any audio or voice note file with `/transcribe` to extract text!",
             parse_mode="Markdown"
         )
@@ -2180,11 +2074,11 @@ async def transcribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             media_type = "audio"
 
     if not target_media:
-        await source_msg.reply_text("❌ *Bhai kisi audio ya voice note file ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Please reply to an audio file or voice note!*", parse_mode="Markdown")
         return
 
     if target_media.file_size > 20 * 1024 * 1024:
-        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
         return
 
     try:
@@ -2196,7 +2090,7 @@ async def transcribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as re_err:
         print(f"Failed to set message reaction: {re_err}")
 
-    status_msg = await source_msg.reply_text("🎙️ *Audio download ho raha hai...* Please wait.", parse_mode="Markdown")
+    status_msg = await source_msg.reply_text("🎙️ *Downloading audio...* Please wait.", parse_mode="Markdown")
     download_dir = f"downloads_transcribe_{user.id}_{source_msg.message_id}"
     os.makedirs(download_dir, exist_ok=True)
 
@@ -2212,13 +2106,24 @@ async def transcribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await status_msg.edit_text("🤖 *Transcribing using AI (Whisper)...* ⚡")
 
+        import base64
         with open(input_file, "rb") as file_read:
-            transcription = await groq_client.audio.transcriptions.create(
-                file=(os.path.basename(input_file), file_read),
-                model="whisper-large-v3",
-            )
-        
-        text = transcription.text.strip()
+            audio_base64 = base64.b64encode(file_read.read()).decode('utf-8')
+
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": "Transcribe the following audio accurately. Only return the transcription, no explanations."},
+                    {"inlineData": {"mimeType": "audio/mp3", "data": audio_base64}}
+                ]
+            }]
+        }
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, json=payload, timeout=60.0)
+            resp.raise_for_status()
+            data = resp.json()
+            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
         if not text:
             await status_msg.edit_text("❌ *Kuch sunai nahi diya!* Transcription result was empty. 🤷‍♂️")
             return
@@ -2238,7 +2143,7 @@ async def transcribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     except Exception as e:
         print(f"Transcription Error: {e}")
-        await status_msg.edit_text(f"❌ *Bhai transcription nahi ho paya:* `{e}`")
+        await status_msg.edit_text(f"❌ *Transcription failed:* `{e}`")
     finally:
         cleanup(download_dir)
 
@@ -2249,7 +2154,7 @@ async def qr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai link ya text toh bhej!*\n\nExample: `/qr https://google.com`",
+            "❌ *Hey link ya text toh bhej!*\n\nExample: `/qr https://google.com`",
             parse_mode="Markdown"
         )
         return
@@ -2281,7 +2186,7 @@ async def qr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"QR Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai QR Code nahi ban paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey QR Code nahi ban paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -2292,7 +2197,7 @@ async def short_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai link toh bhej!*\n\nExample: `/short https://github.com`",
+            "❌ *Hey link toh bhej!*\n\nExample: `/short https://github.com`",
             parse_mode="Markdown"
         )
         return
@@ -2337,7 +2242,7 @@ async def short_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Shortener Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai link short nahi ho paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey link short nahi ho paya:* `{e}`", parse_mode="Markdown")
 
 
 async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2346,7 +2251,7 @@ async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any audio or video file with `/voice` to convert it to a native voice note!",
             parse_mode="Markdown"
         )
@@ -2375,11 +2280,11 @@ async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media_type = "video"
 
     if not target_media:
-        await source_msg.reply_text("❌ *Bhai kisi audio ya video file ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi audio ya video file ko reply karo!*", parse_mode="Markdown")
         return
 
     if target_media.file_size > 20 * 1024 * 1024:
-        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -2422,7 +2327,7 @@ async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Voice Note Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai voice note nahi ban paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey voice note nahi ban paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -2433,7 +2338,7 @@ async def effect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message or not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any audio, voice, or video with:\n"
             "`/effect <type>`\n\n"
             "Options:\n"
@@ -2459,7 +2364,7 @@ async def effect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if effect_type not in valid_effects:
         await source_msg.reply_text(
-            "❌ *Bhai effect type galat hai!*\n\n"
+            "❌ *Hey effect type galat hai!*\n\n"
             "Choose: `chipmunk`, `deep`, `echo`, `robot`, `bassboost`, or `nightcore`.",
             parse_mode="Markdown"
         )
@@ -2488,11 +2393,11 @@ async def effect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media_type = "video"
 
     if not target_media:
-        await source_msg.reply_text("❌ *Bhai kisi audio, voice note ya video ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi audio, voice note ya video ko reply karo!*", parse_mode="Markdown")
         return
 
     if target_media.file_size > 20 * 1024 * 1024:
-        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -2558,7 +2463,7 @@ async def effect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Effect Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai audio effect lag nahi paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey audio effect lag nahi paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -2569,7 +2474,7 @@ async def speed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message or not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any audio or video file with:\n"
             "`/speed <factor>` (e.g. `/speed 1.5` or `/speed 0.75`)\n\n"
             "Factor must be between `0.5` and `2.0`.",
@@ -2600,7 +2505,7 @@ async def speed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media_type = "video"
 
     if not target_media:
-        await source_msg.reply_text("❌ *Bhai kisi audio ya video file ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi audio ya video file ko reply karo!*", parse_mode="Markdown")
         return
 
     try:
@@ -2608,11 +2513,11 @@ async def speed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if factor < 0.5 or factor > 2.0:
             raise ValueError()
     except ValueError:
-        await source_msg.reply_text("❌ *Bhai speed factor `0.5` aur `2.0` ke beech hona chahiye!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey speed factor `0.5` aur `2.0` ke beech hona chahiye!*", parse_mode="Markdown")
         return
 
     if target_media.file_size > 20 * 1024 * 1024:
-        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -2676,7 +2581,7 @@ async def speed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Speed Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai speed change nahi ho payi:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey speed change nahi ho payi:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -2687,7 +2592,7 @@ async def reverse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any short video or audio file with `/reverse` to reverse it!",
             parse_mode="Markdown"
         )
@@ -2716,11 +2621,11 @@ async def reverse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media_type = "video"
 
     if not target_media:
-        await source_msg.reply_text("❌ *Bhai kisi audio ya video file ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi audio ya video file ko reply karo!*", parse_mode="Markdown")
         return
 
     if target_media.file_size > 20 * 1024 * 1024:
-        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -2784,7 +2689,7 @@ async def reverse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Reverse Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai reverse nahi ho paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey reverse nahi ho paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -2795,7 +2700,7 @@ async def boost_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message or not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any audio or video file with:\n"
             "`/boost <decibels>` (e.g. `/boost 6` to boost by 6dB, or `/boost 12` to boost by 12dB).",
             parse_mode="Markdown"
@@ -2825,7 +2730,7 @@ async def boost_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media_type = "video"
 
     if not target_media:
-        await source_msg.reply_text("❌ *Bhai kisi audio ya video file ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi audio ya video file ko reply karo!*", parse_mode="Markdown")
         return
 
     try:
@@ -2833,11 +2738,11 @@ async def boost_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if db <= 0 or db > 30:
             raise ValueError()
     except ValueError:
-        await source_msg.reply_text("❌ *Bhai boost value `1` aur `30` dB ke beech honi chahiye!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey boost value `1` aur `30` dB ke beech honi chahiye!*", parse_mode="Markdown")
         return
 
     if target_media.file_size > 20 * 1024 * 1024:
-        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -2901,7 +2806,7 @@ async def boost_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Boost Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai volume boost nahi ho paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey volume boost nahi ho paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -2916,7 +2821,7 @@ async def compress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if level not in ["low", "medium", "high"]:
         await source_msg.reply_text(
-            "❌ *Bhai compression level invalid!*\n\n"
+            "❌ *Hey compression level invalid!*\n\n"
             "Usage: `/compress <low/medium/high>` (as reply to video)\n\n"
             "• `low`: Maximum compression (480p resolution, lower file size)\n"
             "• `medium`: Balanced compression (720p resolution)\n"
@@ -2927,7 +2832,7 @@ async def compress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any video file with:\n"
             "`/compress <low/medium/high>`",
             parse_mode="Markdown"
@@ -2948,11 +2853,11 @@ async def compress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media_type = "video"
 
     if not target_media:
-        await source_msg.reply_text("❌ *Bhai kisi video file ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi video file ko reply karo!*", parse_mode="Markdown")
         return
 
     if target_media.file_size > 20 * 1024 * 1024:
-        await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
         return
 
     status_msg = await source_msg.reply_text(f"⏳ *Video compress ho raha hai ({level.upper()})...* Yeh thoda time le sakta hai. 🎬", parse_mode="Markdown")
@@ -3028,7 +2933,7 @@ async def compress_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Compress Error: {e}")
-        await status_msg.edit_text(f"❌ *Bhai video compress nahi ho paya:* `{e}`")
+        await status_msg.edit_text(f"❌ *Hey video compress nahi ho paya:* `{e}`")
     finally:
         cleanup(download_dir)
 
@@ -3039,7 +2944,7 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message or not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any photo with:\n"
             "`/filter <gray/blur/edge>`\n\n"
             "Options:\n"
@@ -3059,12 +2964,12 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_photo = reply.document
 
     if not target_photo:
-        await source_msg.reply_text("❌ *Bhai kisi photo ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi photo ko reply karo!*", parse_mode="Markdown")
         return
 
     filter_type = context.args[0].lower().strip()
     if filter_type not in ["gray", "blur", "edge"]:
-        await source_msg.reply_text("❌ *Bhai filter format invalid! Choose: gray, blur, or edge*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey filter format invalid! Choose: gray, blur, or edge*", parse_mode="Markdown")
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -3110,7 +3015,7 @@ async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Filter Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai filter lag nahi paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey filter lag nahi paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -3121,7 +3026,7 @@ async def watermark_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message or not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any photo or video with:\n"
             "`/watermark <text>`\n\n"
             "Example: `/watermark MyBrandBot`",
@@ -3151,11 +3056,11 @@ async def watermark_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media_type = "video"
 
     if not target_media:
-        await source_msg.reply_text("❌ *Bhai kisi photo ya video ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi photo ya video ko reply karo!*", parse_mode="Markdown")
         return
 
     if target_media.file_size > 20 * 1024 * 1024:
-        await source_msg.reply_text("❌ *Bhai file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey file 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -3224,7 +3129,7 @@ async def watermark_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Watermark Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai watermark overlay nahi ho paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey watermark overlay nahi ho paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -3235,7 +3140,7 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not source_msg.reply_to_message:
         await source_msg.reply_text(
-            "❌ *Bhai usage check karo!*\n\n"
+            "❌ *Hey usage check karo!*\n\n"
             "Reply to any video file with `/mute` to remove its audio track.",
             parse_mode="Markdown"
         )
@@ -3255,11 +3160,11 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             media_type = "video"
 
     if not target_media:
-        await source_msg.reply_text("❌ *Bhai kisi video file ko reply karo!*", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey kisi video file ko reply karo!*", parse_mode="Markdown")
         return
 
     if target_media.file_size > 20 * 1024 * 1024:
-        await source_msg.reply_text("❌ *Bhai video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
+        await source_msg.reply_text("❌ *Hey video 20MB se badi hai!* Telegram custom downloads limit limits bots to 20MB. 😔", parse_mode="Markdown")
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -3302,7 +3207,7 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Mute Error: {e}")
-        await source_msg.reply_text(f"❌ *Bhai video mute nahi ho paya:* `{e}`", parse_mode="Markdown")
+        await source_msg.reply_text(f"❌ *Hey video mute nahi ho paya:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -3366,7 +3271,7 @@ async def translate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text_to_translate = update.message.reply_to_message.text
     else:
         await update.message.reply_text(
-            "Bhai kya translate karun? Text likho ya kisi message ko reply karo! 🙏"
+            "Hey kya translate karun? Text likho ya kisi message ko reply karo! 🙏"
         )
         return
 
@@ -3376,7 +3281,7 @@ async def translate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🌐 Auto → Hindi:\n{translated}")
     except Exception as e:
         print(f"Translation Error: {e}")
-        await update.message.reply_text("Bhai translation mein error aagaya! 🙏")
+        await update.message.reply_text("Hey translation mein error aagaya! 🙏")
 
 
 # ─── Reminder ─────────────────────────────────────────────────────────────────
@@ -3389,7 +3294,7 @@ async def _send_reminder_job(bot, chat_id: int, message: str):
 async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
-            "Bhai format galat hai! Example: /remind 10m Chai peeni hai"
+            "Hey format galat hai! Example: /remind 10m Chai peeni hai"
         )
         return
 
@@ -3407,7 +3312,7 @@ async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             seconds = int(time_val)
     except ValueError:
-        await update.message.reply_text("Bhai time sahi se bata! (30s, 10m, 2h) 🙏")
+        await update.message.reply_text("Hey time sahi se bata! (30s, 10m, 2h) 🙏")
         return
 
     run_date = update.message.date + timedelta(seconds=seconds)
@@ -3439,7 +3344,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not urls:
         await update.message.reply_text(
             "🔮 *Oops! Koi link nahi mila...*\n\n"
-            "Bhai, download karne ke liye directly koi link paste karo ya in commands ko check karo:\n"
+            "Hey, download karne ke liye directly koi link paste karo ya in commands ko check karo:\n"
             "🎬 `/mp4 <link>` — Download Video\n"
             "🎵 `/mp3 <link>` — Download Audio\n"
             "🔍 `/search <query>` — Search YouTube\n\n"
@@ -3513,7 +3418,7 @@ async def playlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai playlist link toh de!*\n\n"
+            "❌ *Hey playlist link toh de!*\n\n"
             "Usage: `/playlist <link> [mp3|mp4]` (max 25 items, default mp4)",
             parse_mode="Markdown",
         )
@@ -3551,7 +3456,7 @@ async def playlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             info = ydl.extract_info(url, download=False)
         entries = (info or {}).get("entries") or []
         if not entries:
-            await status_msg.edit_text("❌ *Bhai playlist empty hai ya URL galat hai!*")
+            await status_msg.edit_text("❌ *Hey playlist empty hai ya URL galat hai!*")
             cleanup(download_dir)
             return
         # Keep the count modest so we don't blow the 50 MB Telegram upload
@@ -3605,7 +3510,7 @@ async def playlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         print(f"Playlist error: {e}")
-        await status_msg.edit_text(f"❌ *Bhai playlist download nahi ho payi:* `{e}`", parse_mode="Markdown")
+        await status_msg.edit_text(f"❌ *Hey playlist download nahi ho payi:* `{e}`", parse_mode="Markdown")
     finally:
         cleanup(download_dir)
 
@@ -3661,7 +3566,7 @@ async def hashtags_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai input toh de!*\n\n"
+            "❌ *Hey input toh de!*\n\n"
             "Format:\n"
             "• `/hashtags <instagram_reel_url>` — score the post's hashtags\n"
             "• `/hashtags #fyp #viral #reels` — score a hashtag set you plan to use",
@@ -3678,7 +3583,7 @@ async def hashtags_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             m = re.search(r'/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)', raw)
             if not m:
-                await source_msg.reply_text("❌ *Bhai yeh Instagram shortcode nahi hai!*", parse_mode="Markdown")
+                await source_msg.reply_text("❌ *Hey yeh Instagram shortcode nahi hai!*", parse_mode="Markdown")
                 return
             shortcode = m.group(1)
             post = await asyncio.to_thread(instaloader.Post.from_shortcode, L.context, shortcode)
@@ -3745,7 +3650,7 @@ async def reddit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai input toh de!*\n\n"
+            "❌ *Hey input toh de!*\n\n"
             "• `/reddit pics` — top from r/pics this week\n"
             "• `/reddit https://reddit.com/r/aww/comments/xxx/...`",
             parse_mode="Markdown",
@@ -3836,7 +3741,7 @@ async def ycomments_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai link toh de!*\n\nExample: `/ycomments https://youtu.be/xxx`",
+            "❌ *Hey link toh de!*\n\nExample: `/ycomments https://youtu.be/xxx`",
             parse_mode="Markdown",
         )
         return
@@ -3903,7 +3808,7 @@ async def ttslideshow_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai TikTok link toh de!*\n\n"
+            "❌ *Hey TikTok link toh de!*\n\n"
             "Example: `/ttslideshow https://www.tiktok.com/@user/video/xxx`",
             parse_mode="Markdown",
         )
@@ -3978,7 +3883,7 @@ async def pinboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await source_msg.reply_text(
-            "❌ *Bhai Pinterest board URL de!*\n\n"
+            "❌ *Hey Pinterest board URL de!*\n\n"
             "Example: `/pinboard https://pinterest.com/user/board-name/`",
             parse_mode="Markdown",
         )
@@ -4078,7 +3983,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     if isinstance(update, Update) and update.effective_message:
         await update.effective_message.reply_text(
-            f"⚠️ *Bhai thoda error aagaya:* `{context.error}`",
+            f"⚠️ *Hey thoda error aagaya:* `{context.error}`",
             parse_mode="Markdown"
         )
 

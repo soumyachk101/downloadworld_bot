@@ -5,3 +5,4 @@ httpx>=0.25.0
 python-dotenv==1.0.1
 deep-translator
 apscheduler==3.10.4
+gTTS==2.5.1
