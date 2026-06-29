@@ -1851,40 +1851,84 @@ async def caption_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(image_path, 'rb') as img_file:
             image_base64 = base64.b64encode(img_file.read()).decode('utf-8')
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Generate a creative, engaging Instagram-style caption for this image. Include relevant emojis and hashtags. Keep it under 150 characters."
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_base64}"
-                        }
-                    }
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": "Generate a creative, engaging Instagram-style caption for this image. Include relevant emojis and hashtags. Keep it under 150 characters."},
+                    {"inlineData": {"mimeType": "image/jpeg", "data": image_base64}}
                 ]
-            }
-        ]
+            }]
+        }
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, json=payload, timeout=30.0)
+            resp.raise_for_status()
+            data = resp.json()
+            caption = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        result = f"✨ *AI Caption:*\n━━━━━━━━━━━━━━━━━━━━━\n\n{escape_markdown(caption)}"
+        await source_msg.reply_text(result, parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"Caption error: {e}")
+        await source_msg.reply_text(f"❌ *Failed to generate caption:* `{e}`", parse_mode="Markdown")
+    finally:
+        cleanup(download_dir)
+
+
+async def ocr_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Extract text from images using AI (OCR)."""
+    source_msg = update.effective_message
+    user = update.effective_user
+
+    if not GEMINI_API_KEY:
+        await source_msg.reply_text("❌ *GEMINI_API_KEY is missing!* AI features disabled.", parse_mode="Markdown")
+        return
+
+    if not source_msg.reply_to_message or not source_msg.reply_to_message.photo:
+        await source_msg.reply_text(
+            "❌ *Please reply to a photo!*\n\n"
+            "Reply to a photo with `/ocr` to extract text from it!",
+            parse_mode="Markdown"
+        )
+        return
+
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+        reply = source_msg.reply_to_message
+        photo = reply.photo[-1]
+
+        if photo.file_size > 20 * 1024 * 1024:
+            await source_msg.reply_text("❌ *The photo is larger than 20MB!*", parse_mode="Markdown")
+            return
+
+        download_dir = f"downloads_ocr_{user.id}_{source_msg.message_id}"
+        os.makedirs(download_dir, exist_ok=True)
+
+        file = await context.bot.get_file(photo.file_id)
+        image_path = os.path.join(download_dir, "image.jpg")
+        await file.download_to_drive(image_path)
+
+        import base64
+        with open(image_path, 'rb') as img_file:
+            image_base64 = base64.b64encode(img_file.read()).decode('utf-8')
 
         payload = {
-                "contents": [{
-                    "parts": [
-                        {"text": "Extract all the text visible in this image accurately. Preserve formatting where possible. Only return the extracted text, no explanations."},
-                        {"inlineData": {"mimeType": "image/jpeg", "data": image_base64}}
-                    ]
-                }]
-            }
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, json=payload, timeout=30.0)
-                resp.raise_for_status()
-                data = resp.json()
-                extracted_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            result = f"📝 *Extracted Text (AI):*\n━━━━━━━━━━━━━━━━━━━━━\n\n{escape_markdown(extracted_text)}"
-            await source_msg.reply_text(result, parse_mode="Markdown")
+            "contents": [{
+                "parts": [
+                    {"text": "Extract all the text visible in this image accurately. Preserve formatting where possible. Only return the extracted text, no explanations."},
+                    {"inlineData": {"mimeType": "image/jpeg", "data": image_base64}}
+                ]
+            }]
+        }
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, json=payload, timeout=30.0)
+            resp.raise_for_status()
+            data = resp.json()
+            extracted_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        result = f"📝 *Extracted Text (AI):*\n━━━━━━━━━━━━━━━━━━━━━\n\n{escape_markdown(extracted_text)}"
+        await source_msg.reply_text(result, parse_mode="Markdown")
 
     except Exception as e:
         print(f"OCR error: {e}")
