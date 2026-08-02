@@ -5,6 +5,7 @@ import asyncio
 import shutil
 import sys
 import threading
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 
@@ -4084,14 +4085,32 @@ async def post_init(application: Application):
     print("✅ Bot ready — scheduler started, instaloader configured.")
 
 # ─── Health Check Server ──────────────────────────────────────────────────────
+START_TIME = time.time()
+
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"Bot is alive!")
+        if self.path in ["/health", "/healthz", "/", "/ping", "/status"]:
+            uptime_seconds = int(time.time() - START_TIME)
+            response_data = {
+                "status": "ok",
+                "message": "Bot is healthy and running!",
+                "uptime_seconds": uptime_seconds,
+                "service": "Everything Downloader Bot"
+            }
+            body = json.dumps(response_data, indent=2).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Not Found")
+
     def log_message(self, format, *args):
-        return # Quiet logs
+        return  # Quiet logs
 
 def run_health_check():
     port = int(os.environ.get("PORT", 10000))
