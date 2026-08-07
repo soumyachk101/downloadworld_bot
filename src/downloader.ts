@@ -90,6 +90,7 @@ export class DownloaderService {
   async downloadVideo(url: string, outputDir: string, formatId?: string): Promise<{ filePath: string; title: string }> {
     const cookieArgs = this.getCookieArgs(url);
     const outputTemplate = path.join(outputDir, '%(title).50s.%(ext)s');
+    const maxFileSize = process.env.MAX_FILE_SIZE || '200M';
 
     let formatArg = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
     if (formatId) {
@@ -101,7 +102,7 @@ export class DownloaderService {
       '--merge-output-format', 'mp4',
       '-o', outputTemplate,
       '--no-playlist',
-      '--max-filesize', '50M',
+      '--max-filesize', maxFileSize,
       ...cookieArgs,
       url
     ];
@@ -126,6 +127,7 @@ export class DownloaderService {
   async downloadAudio(url: string, outputDir: string): Promise<{ filePath: string; title: string }> {
     const cookieArgs = this.getCookieArgs(url);
     const outputTemplate = path.join(outputDir, '%(title).50s.%(ext)s');
+    const maxFileSize = process.env.MAX_FILE_SIZE || '200M';
 
     const args = [
       '-x',
@@ -133,7 +135,7 @@ export class DownloaderService {
       '--audio-quality', '0',
       '-o', outputTemplate,
       '--no-playlist',
-      '--max-filesize', '50M',
+      '--max-filesize', maxFileSize,
       ...cookieArgs,
       url
     ];
