@@ -268,17 +268,18 @@ export function setupBot(token: string): Bot {
       }
     }
 
-    // 2. Set continuous chat action indicator in the Telegram Chat Header
-    let currentAction: 'upload_video' | 'upload_document' = 'upload_video';
+    // 2. Step-by-Step Chat Header Status Progression
+    // Step 1: Downloading media from server ('typing' -> Header shows "typing...")
+    let currentAction: 'typing' | 'upload_video' | 'upload_document' = 'typing';
     const actionInterval = setInterval(() => {
       ctx.replyWithChatAction(currentAction).catch(() => {});
     }, 4000);
-    ctx.replyWithChatAction(currentAction).catch(() => {});
+    ctx.replyWithChatAction('typing').catch(() => {});
 
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl_auto_'));
 
     try {
-      // 3. Process Video & Audio in parallel for maximum speed
+      // Step 1: Fetch Video & Audio from media provider
       const [videoRes, audioRes] = await Promise.allSettled([
         downloader.downloadVideo(targetUrl, tempDir),
         downloader.downloadAudio(targetUrl, tempDir)
@@ -286,35 +287,58 @@ export function setupBot(token: string): Bot {
 
       let sentMedia = false;
 
-      // Send Video if available
+      // Step 2: Upload Video if available
       if (videoRes.status === 'fulfilled') {
-        currentAction = 'upload_video';
-        await ctx.replyWithVideo(new InputFile(videoRes.value.filePath), {
-          caption: `🎬 **${videoRes.value.title}**\n\n📊 **Format:** High-Definition Video (MP4)\n⚡ *Powered by Everything Downloader*`,
-          parse_mode: 'Markdown'
-        });
-        sentMedia = true;
-        totalDownloadsCount++;
+        const filePath = videoRes.value.filePath;
+        const stats = fs.statSync(filePath);
+        if (stats.size > 50 * 1024 * 1024) {
+          console.warn(`Video file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 50MB Telegram limit.`);
+        } else {
+          currentAction = 'upload_video';
+          ctx.replyWithChatAction('upload_video').catch(() => {});
+          await ctx.replyWithVideo(new InputFile(filePath), {
+            caption: `🎬 **${videoRes.value.title}**\n\n📊 **Format:** High-Definition Video (MP4)\n⚡ *Powered by Everything Downloader*`,
+            parse_mode: 'Markdown'
+          });
+          sentMedia = true;
+          totalDownloadsCount++;
+        }
       }
 
-      // Send Audio if available
+      // Step 3: Upload Audio if available
       if (audioRes.status === 'fulfilled') {
-        currentAction = 'upload_document';
-        await ctx.replyWithAudio(new InputFile(audioRes.value.filePath), {
-          title: audioRes.value.title,
-          caption: `🎧 **${audioRes.value.title}**\n\n🎼 **Format:** High-Quality MP3 Audio\n⚡ *Powered by Everything Downloader*`,
-          parse_mode: 'Markdown'
-        });
-        sentMedia = true;
-        totalDownloadsCount++;
+        const filePath = audioRes.value.filePath;
+        const stats = fs.statSync(filePath);
+        if (stats.size > 50 * 1024 * 1024) {
+          console.warn(`Audio file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 50MB Telegram limit.`);
+        } else {
+          currentAction = 'upload_document';
+          ctx.replyWithChatAction('upload_document').catch(() => {});
+          await ctx.replyWithAudio(new InputFile(filePath), {
+            title: audioRes.value.title,
+            caption: `🎧 **${audioRes.value.title}**\n\n🎼 **Format:** High-Quality MP3 Audio\n⚡ *Powered by Everything Downloader*`,
+            parse_mode: 'Markdown'
+          });
+          sentMedia = true;
+          totalDownloadsCount++;
+        }
       }
 
       if (!sentMedia) {
         const errObj = (videoRes as PromiseRejectedResult).reason || (audioRes as PromiseRejectedResult).reason;
-        throw new Error(errObj?.message || 'Failed to process media download.');
+        const errMsg = errObj?.message || 'Failed to process media download.';
+        if (errMsg.includes('max-filesize') || errMsg.includes('exceeds')) {
+          throw new Error('File size exceeds Telegram\'s 50MB Bot API upload limit.');
+        }
+        throw new Error(errMsg);
       }
     } catch (err: any) {
-      await ctx.reply(`❌ **Download Failed**\n\n📌 **Reason:** \`${err.message || 'Unable to fetch media.'}\` \n\n💡 *Tip: Make sure the URL is public and accessible.*`, { parse_mode: 'Markdown' });
+      const msg = err.message || String(err);
+      if (msg.includes('sendVideo') || msg.includes('sendAudio') || msg.includes('50MB') || msg.includes('413')) {
+        await ctx.reply(`❌ **Upload Limit Exceeded**\n\n📌 **Reason:** Media file size exceeds Telegram's 50MB Bot API upload limit.\n\n💡 *Tip: Try downloading a shorter video or reel under 50MB.*`, { parse_mode: 'Markdown' });
+      } else {
+        await ctx.reply(`❌ **Download Failed**\n\n📌 **Reason:** \`${msg}\` \n\n💡 *Tip: Make sure the URL is public and accessible.*`, { parse_mode: 'Markdown' });
+      }
     } finally {
       clearInterval(actionInterval);
       fs.rmSync(tempDir, { recursive: true, force: true });

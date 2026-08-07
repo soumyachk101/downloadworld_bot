@@ -101,7 +101,7 @@ export class DownloaderService {
       '--merge-output-format', 'mp4',
       '-o', outputTemplate,
       '--no-playlist',
-      '--max-filesize', '500M',
+      '--max-filesize', '50M',
       ...cookieArgs,
       url
     ];
@@ -132,6 +132,7 @@ export class DownloaderService {
       '--audio-quality', '0',
       '-o', outputTemplate,
       '--no-playlist',
+      '--max-filesize', '50M',
       ...cookieArgs,
       url
     ];
