@@ -277,12 +277,16 @@ export function setupBot(token: string): Bot {
     ctx.replyWithChatAction('typing').catch(() => {});
 
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl_auto_'));
+    const videoDir = path.join(tempDir, 'video');
+    const audioDir = path.join(tempDir, 'audio');
+    fs.mkdirSync(videoDir, { recursive: true });
+    fs.mkdirSync(audioDir, { recursive: true });
 
     try {
-      // Step 1: Fetch Video & Audio from media provider
+      // Step 1: Fetch Video & Audio from media provider concurrently in isolated directories
       const [videoRes, audioRes] = await Promise.allSettled([
-        downloader.downloadVideo(targetUrl, tempDir),
-        downloader.downloadAudio(targetUrl, tempDir)
+        downloader.downloadVideo(targetUrl, videoDir),
+        downloader.downloadAudio(targetUrl, audioDir)
       ]);
 
       let sentMedia = false;
@@ -290,37 +294,41 @@ export function setupBot(token: string): Bot {
       // Step 2: Upload Video if available
       if (videoRes.status === 'fulfilled') {
         const filePath = videoRes.value.filePath;
-        const stats = fs.statSync(filePath);
-        if (stats.size > 50 * 1024 * 1024) {
-          console.warn(`Video file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 50MB Telegram limit.`);
-        } else {
-          currentAction = 'upload_video';
-          ctx.replyWithChatAction('upload_video').catch(() => {});
-          await ctx.replyWithVideo(new InputFile(filePath), {
-            caption: `🎬 **${videoRes.value.title}**\n\n📊 **Format:** High-Definition Video (MP4)\n⚡ *Powered by Everything Downloader*`,
-            parse_mode: 'Markdown'
-          });
-          sentMedia = true;
-          totalDownloadsCount++;
+        if (fs.existsSync(filePath)) {
+          const stats = fs.statSync(filePath);
+          if (stats.size > 50 * 1024 * 1024) {
+            console.warn(`Video file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 50MB Telegram limit.`);
+          } else {
+            currentAction = 'upload_video';
+            ctx.replyWithChatAction('upload_video').catch(() => {});
+            await ctx.replyWithVideo(new InputFile(filePath), {
+              caption: `🎬 **${videoRes.value.title}**\n\n📊 **Format:** High-Definition Video (MP4)\n⚡ *Powered by Everything Downloader*`,
+              parse_mode: 'Markdown'
+            });
+            sentMedia = true;
+            totalDownloadsCount++;
+          }
         }
       }
 
       // Step 3: Upload Audio if available
       if (audioRes.status === 'fulfilled') {
         const filePath = audioRes.value.filePath;
-        const stats = fs.statSync(filePath);
-        if (stats.size > 50 * 1024 * 1024) {
-          console.warn(`Audio file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 50MB Telegram limit.`);
-        } else {
-          currentAction = 'upload_document';
-          ctx.replyWithChatAction('upload_document').catch(() => {});
-          await ctx.replyWithAudio(new InputFile(filePath), {
-            title: audioRes.value.title,
-            caption: `🎧 **${audioRes.value.title}**\n\n🎼 **Format:** High-Quality MP3 Audio\n⚡ *Powered by Everything Downloader*`,
-            parse_mode: 'Markdown'
-          });
-          sentMedia = true;
-          totalDownloadsCount++;
+        if (fs.existsSync(filePath)) {
+          const stats = fs.statSync(filePath);
+          if (stats.size > 50 * 1024 * 1024) {
+            console.warn(`Audio file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 50MB Telegram limit.`);
+          } else {
+            currentAction = 'upload_document';
+            ctx.replyWithChatAction('upload_document').catch(() => {});
+            await ctx.replyWithAudio(new InputFile(filePath), {
+              title: audioRes.value.title,
+              caption: `🎧 **${audioRes.value.title}**\n\n🎼 **Format:** High-Quality MP3 Audio\n⚡ *Powered by Everything Downloader*`,
+              parse_mode: 'Markdown'
+            });
+            sentMedia = true;
+            totalDownloadsCount++;
+          }
         }
       }
 

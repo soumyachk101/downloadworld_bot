@@ -109,9 +109,10 @@ export class DownloaderService {
     try {
       await execFileAsync('yt-dlp', args, { timeout: 300000 });
       const files = fs.readdirSync(outputDir);
-      const downloadedFile = files.find(f => !f.startsWith('.') && !f.endsWith('.part') && !f.endsWith('.ytdl') && !f.endsWith('.json'));
+      const downloadedFile = files.find(f => !f.startsWith('.') && (f.endsWith('.mp4') || f.endsWith('.mkv') || f.endsWith('.webm') || f.endsWith('.mov') || f.endsWith('.avi')))
+        || files.find(f => !f.startsWith('.') && !f.endsWith('.part') && !f.endsWith('.ytdl') && !f.endsWith('.json') && !f.endsWith('.m4a') && !f.endsWith('.mp3'));
       if (!downloadedFile) {
-        throw new Error('Downloaded file not found in output directory.');
+        throw new Error('Downloaded video file not found in output directory.');
       }
       return {
         filePath: path.join(outputDir, downloadedFile),
