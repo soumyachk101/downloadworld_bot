@@ -296,8 +296,8 @@ export function setupBot(token: string): Bot {
         const filePath = videoRes.value.filePath;
         if (fs.existsSync(filePath)) {
           const stats = fs.statSync(filePath);
-          if (stats.size > 50 * 1024 * 1024) {
-            console.warn(`Video file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 50MB Telegram limit.`);
+          if (stats.size > 200 * 1024 * 1024) {
+            console.warn(`Video file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 200MB limit.`);
           } else {
             currentAction = 'upload_video';
             ctx.replyWithChatAction('upload_video').catch(() => {});
@@ -316,8 +316,8 @@ export function setupBot(token: string): Bot {
         const filePath = audioRes.value.filePath;
         if (fs.existsSync(filePath)) {
           const stats = fs.statSync(filePath);
-          if (stats.size > 50 * 1024 * 1024) {
-            console.warn(`Audio file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 50MB Telegram limit.`);
+          if (stats.size > 200 * 1024 * 1024) {
+            console.warn(`Audio file ${filePath} (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds 200MB limit.`);
           } else {
             currentAction = 'upload_document';
             ctx.replyWithChatAction('upload_document').catch(() => {});
@@ -336,14 +336,14 @@ export function setupBot(token: string): Bot {
         const errObj = (videoRes as PromiseRejectedResult).reason || (audioRes as PromiseRejectedResult).reason;
         const errMsg = errObj?.message || 'Failed to process media download.';
         if (errMsg.includes('max-filesize') || errMsg.includes('exceeds')) {
-          throw new Error('File size exceeds Telegram\'s 50MB Bot API upload limit.');
+          throw new Error('File size exceeds the 200MB upload limit.');
         }
         throw new Error(errMsg);
       }
     } catch (err: any) {
       const msg = err.message || String(err);
-      if (msg.includes('sendVideo') || msg.includes('sendAudio') || msg.includes('50MB') || msg.includes('413')) {
-        await ctx.reply(`❌ **Upload Limit Exceeded**\n\n📌 **Reason:** Media file size exceeds Telegram's 50MB Bot API upload limit.\n\n💡 *Tip: Try downloading a shorter video or reel under 50MB.*`, { parse_mode: 'Markdown' });
+      if (msg.includes('sendVideo') || msg.includes('sendAudio') || msg.includes('200MB') || msg.includes('50MB') || msg.includes('413')) {
+        await ctx.reply(`❌ **Upload Limit Exceeded**\n\n📌 **Reason:** Media file size exceeds the 200MB upload limit.\n\n💡 *Tip: Try downloading a shorter video or clip under 200MB.*`, { parse_mode: 'Markdown' });
       } else {
         await ctx.reply(`❌ **Download Failed**\n\n📌 **Reason:** \`${msg}\` \n\n💡 *Tip: Make sure the URL is public and accessible.*`, { parse_mode: 'Markdown' });
       }
