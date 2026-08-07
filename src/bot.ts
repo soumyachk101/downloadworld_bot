@@ -64,11 +64,12 @@ export function setupBot(token: string): Bot {
       .url('📢 Update Channel', 'https://t.me/telegram');
 
     const welcomeMsg = `⚡ **Welcome to Everything Downloader Bot!** ⚡\n\n` +
-      `Send me any link from **YouTube, Instagram, TikTok, Twitter/X, Facebook, Reddit, Pinterest**, and I will download high quality video or audio for you!\n\n` +
+      `Send me any link from **YouTube, Instagram, TikTok, Twitter/X, Facebook, Reddit, Pinterest**, and I will automatically download high quality **Video (MP4)** & **Audio (MP3)** for you!\n\n` +
       `💡 **Quick Features:**\n` +
-      `• Send any social media link directly\n` +
-      `• \`/mp3 <url>\` — Download audio\n` +
-      `• \`/mp4 <url>\` — Download video\n` +
+      `• Paste any media link directly in chat\n` +
+      `• Automatic **MP4 + MP3** dual download\n` +
+      `• \`/mp3 <url>\` — Download audio only\n` +
+      `• \`/mp4 <url>\` — Download video only\n` +
       `• \`/qr <text>\` — Generate QR code\n` +
       `• \`/stats\` — Check bot performance`;
 
@@ -95,7 +96,7 @@ export function setupBot(token: string): Bot {
       `• \`/mp4 <url>\` - Download video\n` +
       `• \`/qr <text>\` - Generate QR code image\n` +
       `• \`/short <url>\` - Create short link\n\n` +
-      `Simply paste any link in chat to get started!`;
+      `Simply paste any link in chat to get automatic MP4 + MP3 downloads!`;
 
     await ctx.reply(helpMsg, { parse_mode: 'Markdown' });
   });
@@ -126,18 +127,33 @@ export function setupBot(token: string): Bot {
       return ctx.reply('⚠️ Please provide a URL!\nUsage: `/mp3 https://youtube.com/...`', { parse_mode: 'Markdown' });
     }
 
-    const statusMsg = await ctx.reply('⏳ Processing audio download...');
+    try {
+      await ctx.react('👀');
+    } catch {
+      if (ctx.message && ctx.chat) {
+        await ctx.api.setMessageReaction(ctx.chat.id, ctx.message.message_id, [{ type: 'emoji', emoji: '👀' }]).catch(() => {});
+      }
+    }
+
+    const actionInterval = setInterval(() => {
+      ctx.replyWithChatAction('upload_document').catch(() => {});
+    }, 4000);
+    ctx.replyWithChatAction('upload_document').catch(() => {});
+
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl_mp3_'));
 
     try {
       const result = await downloader.downloadAudio(url, tempDir);
-      await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, '📤 Uploading MP3 to Telegram...');
-      await ctx.replyWithAudio(new InputFile(result.filePath), { title: result.title });
+      await ctx.replyWithAudio(new InputFile(result.filePath), {
+        title: result.title,
+        caption: `🎵 **${result.title}**\n⚡ *Extracted MP3 Audio*`,
+        parse_mode: 'Markdown'
+      });
       totalDownloadsCount++;
-      await ctx.api.deleteMessage(ctx.chat.id, statusMsg.message_id).catch(() => {});
     } catch (err: any) {
-      await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `❌ Failed to download audio: ${err.message}`);
+      await ctx.reply(`❌ Failed to download audio: ${err.message}`);
     } finally {
+      clearInterval(actionInterval);
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
@@ -149,18 +165,32 @@ export function setupBot(token: string): Bot {
       return ctx.reply('⚠️ Please provide a URL!\nUsage: `/mp4 https://youtube.com/...`', { parse_mode: 'Markdown' });
     }
 
-    const statusMsg = await ctx.reply('⏳ Processing video download...');
+    try {
+      await ctx.react('👀');
+    } catch {
+      if (ctx.message && ctx.chat) {
+        await ctx.api.setMessageReaction(ctx.chat.id, ctx.message.message_id, [{ type: 'emoji', emoji: '👀' }]).catch(() => {});
+      }
+    }
+
+    const actionInterval = setInterval(() => {
+      ctx.replyWithChatAction('upload_video').catch(() => {});
+    }, 4000);
+    ctx.replyWithChatAction('upload_video').catch(() => {});
+
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl_mp4_'));
 
     try {
       const result = await downloader.downloadVideo(url, tempDir);
-      await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, '📤 Uploading Video to Telegram...');
-      await ctx.replyWithVideo(new InputFile(result.filePath));
+      await ctx.replyWithVideo(new InputFile(result.filePath), {
+        caption: `🎥 **${result.title}**\n⚡ *Downloaded Video*`,
+        parse_mode: 'Markdown'
+      });
       totalDownloadsCount++;
-      await ctx.api.deleteMessage(ctx.chat.id, statusMsg.message_id).catch(() => {});
     } catch (err: any) {
-      await ctx.api.editMessageText(ctx.chat.id, statusMsg.message_id, `❌ Failed to download video: ${err.message}`);
+      await ctx.reply(`❌ Failed to download video: ${err.message}`);
     } finally {
+      clearInterval(actionInterval);
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
@@ -182,7 +212,7 @@ export function setupBot(token: string): Bot {
     }
   });
 
-  // ─── Message Handler (URL Auto-Detect) ──────────────────────────────────────
+  // ─── Message Handler (Automatic Detection & Dual MP4 + MP3 Download) ───────────────
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text;
     const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -193,18 +223,67 @@ export function setupBot(token: string): Bot {
     }
 
     const targetUrl = matches[0];
-    const urlKey = storeUrl(targetUrl);
 
-    const keyboard = new InlineKeyboard()
-      .text('🎥 Download Video', `dl_video:${urlKey}`)
-      .text('🎵 Download Audio', `dl_audio:${urlKey}`)
-      .row()
-      .text('ℹ️ Media Info', `dl_info:${urlKey}`);
+    // 1. React to user message with 👀 emoji instantly
+    try {
+      await ctx.react('👀');
+    } catch {
+      if (ctx.message && ctx.chat) {
+        await ctx.api.setMessageReaction(ctx.chat.id, ctx.message.message_id, [{ type: 'emoji', emoji: '👀' }]).catch(() => {});
+      }
+    }
 
-    await ctx.reply(`🔗 **Detected Link:**\n\`${targetUrl}\`\n\nChoose an option below:`, {
-      parse_mode: 'Markdown',
-      reply_markup: keyboard
-    });
+    // 2. Set continuous chat action indicator in the Telegram Chat Header
+    let currentAction: 'upload_video' | 'upload_document' = 'upload_video';
+    const actionInterval = setInterval(() => {
+      ctx.replyWithChatAction(currentAction).catch(() => {});
+    }, 4000);
+    ctx.replyWithChatAction(currentAction).catch(() => {});
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl_auto_'));
+
+    try {
+      // 3. Process Video & Audio in parallel for maximum speed
+      const [videoRes, audioRes] = await Promise.allSettled([
+        downloader.downloadVideo(targetUrl, tempDir),
+        downloader.downloadAudio(targetUrl, tempDir)
+      ]);
+
+      let sentMedia = false;
+
+      // Send Video if available
+      if (videoRes.status === 'fulfilled') {
+        currentAction = 'upload_video';
+        await ctx.replyWithVideo(new InputFile(videoRes.value.filePath), {
+          caption: `🎥 **${videoRes.value.title}**\n⚡ *Downloaded via Everything Downloader*`,
+          parse_mode: 'Markdown'
+        });
+        sentMedia = true;
+        totalDownloadsCount++;
+      }
+
+      // Send Audio if available
+      if (audioRes.status === 'fulfilled') {
+        currentAction = 'upload_document';
+        await ctx.replyWithAudio(new InputFile(audioRes.value.filePath), {
+          title: audioRes.value.title,
+          caption: `🎵 **${audioRes.value.title}**\n⚡ *Extracted MP3 Audio*`,
+          parse_mode: 'Markdown'
+        });
+        sentMedia = true;
+        totalDownloadsCount++;
+      }
+
+      if (!sentMedia) {
+        const errObj = (videoRes as PromiseRejectedResult).reason || (audioRes as PromiseRejectedResult).reason;
+        throw new Error(errObj?.message || 'Failed to process media download.');
+      }
+    } catch (err: any) {
+      await ctx.reply(`❌ **Download Failed:** ${err.message || 'Unable to fetch media.'}`, { parse_mode: 'Markdown' });
+    } finally {
+      clearInterval(actionInterval);
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   // ─── Callback Query Handlers ────────────────────────────────────────────────
@@ -230,19 +309,22 @@ export function setupBot(token: string): Bot {
       }
       await ctx.answerCallbackQuery('Starting video download...');
       if (!ctx.chat) return;
-      const chatId = ctx.chat.id;
-      const statusMsg = await ctx.reply('⏳ Downloading video...');
+
+      const actionInterval = setInterval(() => {
+        ctx.replyWithChatAction('upload_video').catch(() => {});
+      }, 4000);
+      ctx.replyWithChatAction('upload_video').catch(() => {});
+
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl_video_cb_'));
 
       try {
         const result = await downloader.downloadVideo(url, tempDir);
-        await ctx.api.editMessageText(chatId, statusMsg.message_id, '📤 Uploading video...');
         await ctx.replyWithVideo(new InputFile(result.filePath));
         totalDownloadsCount++;
-        await ctx.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
       } catch (err: any) {
-        await ctx.api.editMessageText(chatId, statusMsg.message_id, `❌ Download failed: ${err.message}`);
+        await ctx.reply(`❌ Download failed: ${err.message}`);
       } finally {
+        clearInterval(actionInterval);
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
     }
@@ -255,19 +337,22 @@ export function setupBot(token: string): Bot {
       }
       await ctx.answerCallbackQuery('Starting audio download...');
       if (!ctx.chat) return;
-      const chatId = ctx.chat.id;
-      const statusMsg = await ctx.reply('⏳ Extracting MP3 audio...');
+
+      const actionInterval = setInterval(() => {
+        ctx.replyWithChatAction('upload_document').catch(() => {});
+      }, 4000);
+      ctx.replyWithChatAction('upload_document').catch(() => {});
+
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dl_audio_cb_'));
 
       try {
         const result = await downloader.downloadAudio(url, tempDir);
-        await ctx.api.editMessageText(chatId, statusMsg.message_id, '📤 Uploading audio...');
         await ctx.replyWithAudio(new InputFile(result.filePath), { title: result.title });
         totalDownloadsCount++;
-        await ctx.api.deleteMessage(chatId, statusMsg.message_id).catch(() => {});
       } catch (err: any) {
-        await ctx.api.editMessageText(chatId, statusMsg.message_id, `❌ Extraction failed: ${err.message}`);
+        await ctx.reply(`❌ Extraction failed: ${err.message}`);
       } finally {
+        clearInterval(actionInterval);
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
     }
@@ -296,4 +381,5 @@ export function setupBot(token: string): Bot {
 
   return bot;
 }
+
 
