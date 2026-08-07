@@ -23,21 +23,46 @@ export interface MediaInfo {
 }
 
 export class DownloaderService {
-  private getCookieArgs(): string[] {
+  private getCookieArgs(url?: string): string[] {
     const args: string[] = [];
     const ytCookie = process.env.YOUTUBE_COOKIES_FILE || 'youtube_cookies.txt';
     const igCookie = process.env.INSTAGRAM_COOKIES_FILE || 'instagram_cookies.txt';
+    const cookiesJsonPath = path.join(process.cwd(), 'cookies.json');
 
-    if (fs.existsSync(ytCookie)) {
-      args.push('--cookies', ytCookie);
-    } else if (fs.existsSync(igCookie)) {
-      args.push('--cookies', igCookie);
+    const isInstagram = url ? /instagram\.com/i.test(url) : false;
+    const isYouTube = url ? /(youtube\.com|youtu\.be)/i.test(url) : false;
+
+    if (isInstagram) {
+      if (fs.existsSync(igCookie)) {
+        args.push('--cookies', igCookie);
+      } else if (fs.existsSync(cookiesJsonPath)) {
+        try {
+          const raw = fs.readFileSync(cookiesJsonPath, 'utf-8');
+          const parsed = JSON.parse(raw);
+          if (parsed.instagram && Array.isArray(parsed.instagram) && parsed.instagram[0]) {
+            args.push('--add-header', `Cookie: ${parsed.instagram[0]}`);
+          }
+        } catch (e) {
+          // ignore parse error
+        }
+      }
+    } else if (isYouTube) {
+      if (fs.existsSync(ytCookie)) {
+        args.push('--cookies', ytCookie);
+      }
+    } else {
+      if (fs.existsSync(ytCookie)) {
+        args.push('--cookies', ytCookie);
+      }
+      if (fs.existsSync(igCookie)) {
+        args.push('--cookies', igCookie);
+      }
     }
     return args;
   }
 
   async getInfo(url: string): Promise<MediaInfo> {
-    const cookieArgs = this.getCookieArgs();
+    const cookieArgs = this.getCookieArgs(url);
     const args = [
       '--dump-json',
       '--no-playlist',
@@ -63,7 +88,7 @@ export class DownloaderService {
   }
 
   async downloadVideo(url: string, outputDir: string, formatId?: string): Promise<{ filePath: string; title: string }> {
-    const cookieArgs = this.getCookieArgs();
+    const cookieArgs = this.getCookieArgs(url);
     const outputTemplate = path.join(outputDir, '%(title).50s.%(ext)s');
 
     let formatArg = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
@@ -84,7 +109,7 @@ export class DownloaderService {
     try {
       await execFileAsync('yt-dlp', args, { timeout: 300000 });
       const files = fs.readdirSync(outputDir);
-      const downloadedFile = files.find(f => !f.endsWith('.part') && !f.endsWith('.ytdl'));
+      const downloadedFile = files.find(f => !f.startsWith('.') && !f.endsWith('.part') && !f.endsWith('.ytdl') && !f.endsWith('.json'));
       if (!downloadedFile) {
         throw new Error('Downloaded file not found in output directory.');
       }
@@ -98,7 +123,7 @@ export class DownloaderService {
   }
 
   async downloadAudio(url: string, outputDir: string): Promise<{ filePath: string; title: string }> {
-    const cookieArgs = this.getCookieArgs();
+    const cookieArgs = this.getCookieArgs(url);
     const outputTemplate = path.join(outputDir, '%(title).50s.%(ext)s');
 
     const args = [
@@ -114,7 +139,7 @@ export class DownloaderService {
     try {
       await execFileAsync('yt-dlp', args, { timeout: 300000 });
       const files = fs.readdirSync(outputDir);
-      const downloadedFile = files.find(f => f.endsWith('.mp3'));
+      const downloadedFile = files.find(f => !f.startsWith('.') && f.endsWith('.mp3'));
       if (!downloadedFile) {
         throw new Error('Downloaded MP3 file not found.');
       }

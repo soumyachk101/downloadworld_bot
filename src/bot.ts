@@ -1,7 +1,8 @@
-import { Bot, InlineKeyboard, InputFile } from 'grammy';
+import { Bot, InlineKeyboard, InputFile, GrammyError, HttpError } from 'grammy';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import crypto from 'crypto';
 import QRCode from 'qrcode';
 import { DownloaderService } from './downloader.js';
 
@@ -9,8 +10,50 @@ const downloader = new DownloaderService();
 const botStartTime = Date.now();
 let totalDownloadsCount = 0;
 
+// Store detected URLs mapped to short hex keys so callback_data never exceeds Telegram's 64-byte limit
+interface StoredUrl {
+  url: string;
+  createdAt: number;
+}
+const urlStore = new Map<string, StoredUrl>();
+
+function storeUrl(url: string): string {
+  const key = crypto.randomBytes(6).toString('hex'); // 12 characters
+  urlStore.set(key, { url, createdAt: Date.now() });
+
+  // Maintain cache size
+  if (urlStore.size > 1000) {
+    const now = Date.now();
+    for (const [k, val] of urlStore.entries()) {
+      if (now - val.createdAt > 3600000) {
+        urlStore.delete(k);
+      }
+    }
+  }
+  return key;
+}
+
+function getStoredUrl(keyOrUrl: string): string {
+  const entry = urlStore.get(keyOrUrl);
+  return entry ? entry.url : keyOrUrl;
+}
+
 export function setupBot(token: string): Bot {
   const bot = new Bot(token);
+
+  // ─── Global Error Handler ──────────────────────────────────────────────────
+  bot.catch((err) => {
+    const ctx = err.ctx;
+    console.error(`[bot.catch] Error while handling update ${ctx.update.update_id}:`);
+    const e = err.error;
+    if (e instanceof GrammyError) {
+      console.error('[bot.catch] Telegram API error:', e.description);
+    } else if (e instanceof HttpError) {
+      console.error('[bot.catch] Network error connecting to Telegram:', e);
+    } else {
+      console.error('[bot.catch] Unhandled error:', e);
+    }
+  });
 
   // ─── Command: /start ────────────────────────────────────────────────────────
   bot.command('start', async (ctx) => {
@@ -150,11 +193,13 @@ export function setupBot(token: string): Bot {
     }
 
     const targetUrl = matches[0];
+    const urlKey = storeUrl(targetUrl);
+
     const keyboard = new InlineKeyboard()
-      .text('🎥 Download Video', `dl_video:${targetUrl}`)
-      .text('🎵 Download Audio', `dl_audio:${targetUrl}`)
+      .text('🎥 Download Video', `dl_video:${urlKey}`)
+      .text('🎵 Download Audio', `dl_audio:${urlKey}`)
       .row()
-      .text('ℹ️ Media Info', `dl_info:${targetUrl}`);
+      .text('ℹ️ Media Info', `dl_info:${urlKey}`);
 
     await ctx.reply(`🔗 **Detected Link:**\n\`${targetUrl}\`\n\nChoose an option below:`, {
       parse_mode: 'Markdown',
@@ -178,7 +223,11 @@ export function setupBot(token: string): Bot {
     }
 
     if (data.startsWith('dl_video:')) {
-      const url = data.replace('dl_video:', '');
+      const key = data.replace('dl_video:', '');
+      const url = getStoredUrl(key);
+      if (!url) {
+        return ctx.answerCallbackQuery({ text: '⚠️ Link session expired. Please send the link again.', show_alert: true });
+      }
       await ctx.answerCallbackQuery('Starting video download...');
       if (!ctx.chat) return;
       const chatId = ctx.chat.id;
@@ -199,7 +248,11 @@ export function setupBot(token: string): Bot {
     }
 
     if (data.startsWith('dl_audio:')) {
-      const url = data.replace('dl_audio:', '');
+      const key = data.replace('dl_audio:', '');
+      const url = getStoredUrl(key);
+      if (!url) {
+        return ctx.answerCallbackQuery({ text: '⚠️ Link session expired. Please send the link again.', show_alert: true });
+      }
       await ctx.answerCallbackQuery('Starting audio download...');
       if (!ctx.chat) return;
       const chatId = ctx.chat.id;
@@ -220,7 +273,11 @@ export function setupBot(token: string): Bot {
     }
 
     if (data.startsWith('dl_info:')) {
-      const url = data.replace('dl_info:', '');
+      const key = data.replace('dl_info:', '');
+      const url = getStoredUrl(key);
+      if (!url) {
+        return ctx.answerCallbackQuery({ text: '⚠️ Link session expired. Please send the link again.', show_alert: true });
+      }
       await ctx.answerCallbackQuery('Fetching info...');
       try {
         const info = await downloader.getInfo(url);
@@ -239,3 +296,4 @@ export function setupBot(token: string): Bot {
 
   return bot;
 }
+
