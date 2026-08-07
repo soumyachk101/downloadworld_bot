@@ -55,23 +55,53 @@ export function setupBot(token: string): Bot {
     }
   });
 
+  const getMainMenuKeyboard = () => {
+    return new InlineKeyboard()
+      .text('📖 Features & Guide', 'show_help')
+      .text('📊 System Stats', 'show_stats')
+      .row()
+      .text('⚡ Commands List', 'show_commands')
+      .url('📢 Updates Channel', 'https://t.me/telegram');
+  };
+
+  const getWelcomeMessageText = (firstName: string) => {
+    return `🌟 **WELCOME TO EVERYTHING DOWNLOADER ULTRA** 🌟\n\n` +
+      `Hello **${firstName}**! 👋\n` +
+      `Your high-speed, all-in-one social media downloader bot.\n\n` +
+      `✨ **Supported Platforms:**\n` +
+      `🔴 **YouTube** • Shorts, Music & HD Videos\n` +
+      `📸 **Instagram** • Reels, Posts, Stories & IGTV\n` +
+      `🎵 **TikTok** • No-Watermark HD Clips\n` +
+      `𝕏 **Twitter/X** • Media Clips & Videos\n` +
+      `📘 **Facebook** • Public Videos & Reels\n` +
+      `🤖 **Reddit** • Videos with HD Audio\n` +
+      `📌 **Pinterest** • Media Pins & Gifs\n\n` +
+      `⚡ **Bot Capabilities:**\n` +
+      `• **Auto Dual Download:** Paste link -> Get **MP4 + MP3** together!\n` +
+      `• **Smart Status Bar:** Clean header indicator without chat spam\n` +
+      `• **Instant Reactions:** 👀 Emoji confirmation\n\n` +
+      `💡 *Simply paste any link in chat to start downloading!*`;
+  };
+
   // ─── Command: /start ────────────────────────────────────────────────────────
   bot.command('start', async (ctx) => {
-    const keyboard = new InlineKeyboard()
-      .text('ℹ️ Help & Commands', 'show_help')
-      .text('📊 Bot Stats', 'show_stats')
-      .row()
-      .url('📢 Update Channel', 'https://t.me/telegram');
+    const firstName = ctx.from?.first_name || 'User';
+    const welcomeMsg = getWelcomeMessageText(firstName);
+    const keyboard = getMainMenuKeyboard();
+    const logoPath = path.join(process.cwd(), 'logo.jpg');
 
-    const welcomeMsg = `⚡ **Welcome to Everything Downloader Bot!** ⚡\n\n` +
-      `Send me any link from **YouTube, Instagram, TikTok, Twitter/X, Facebook, Reddit, Pinterest**, and I will automatically download high quality **Video (MP4)** & **Audio (MP3)** for you!\n\n` +
-      `💡 **Quick Features:**\n` +
-      `• Paste any media link directly in chat\n` +
-      `• Automatic **MP4 + MP3** dual download\n` +
-      `• \`/mp3 <url>\` — Download audio only\n` +
-      `• \`/mp4 <url>\` — Download video only\n` +
-      `• \`/qr <text>\` — Generate QR code\n` +
-      `• \`/stats\` — Check bot performance`;
+    if (fs.existsSync(logoPath)) {
+      try {
+        await ctx.replyWithPhoto(new InputFile(logoPath), {
+          caption: welcomeMsg,
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+        return;
+      } catch {
+        // Fallback to text if photo fails
+      }
+    }
 
     await ctx.reply(welcomeMsg, {
       parse_mode: 'Markdown',
@@ -81,24 +111,23 @@ export function setupBot(token: string): Bot {
 
   // ─── Command: /help ─────────────────────────────────────────────────────────
   bot.command('help', async (ctx) => {
-    const helpMsg = `📖 **Everything Downloader Bot Guide**\n\n` +
-      `**Supported Platforms:**\n` +
-      `• YouTube (Videos, Shorts, Music)\n` +
-      `• Instagram (Reels, Posts, IGTV)\n` +
-      `• TikTok (Videos without watermark)\n` +
-      `• Twitter/X & Facebook\n` +
-      `• Reddit, Pinterest & 1000+ sites\n\n` +
-      `**Commands List:**\n` +
-      `• \`/start\` - Start bot & main menu\n` +
-      `• \`/help\` - Show help guide\n` +
-      `• \`/stats\` - Show bot status & usage\n` +
-      `• \`/mp3 <url>\` - Extract & download MP3 audio\n` +
-      `• \`/mp4 <url>\` - Download video\n` +
-      `• \`/qr <text>\` - Generate QR code image\n` +
-      `• \`/short <url>\` - Create short link\n\n` +
-      `Simply paste any link in chat to get automatic MP4 + MP3 downloads!`;
+    const helpMsg = `📖 **EVERYTHING DOWNLOADER USER GUIDE** 📖\n\n` +
+      `🎯 **How to Download Media:**\n` +
+      `1️⃣ Paste any URL directly into this chat.\n` +
+      `2️⃣ The bot will react with 👀 and process the link.\n` +
+      `3️⃣ Both high-definition **MP4 Video** and **MP3 Audio** will be delivered!\n\n` +
+      `📌 **Manual Commands:**\n` +
+      `• \`/mp3 <link>\` — Extract audio only\n` +
+      `• \`/mp4 <link>\` — Download video only\n` +
+      `• \`/qr <text>\` — Create custom QR code\n` +
+      `• \`/stats\` — View real-time system performance\n` +
+      `• \`/start\` — Open main interactive menu\n\n` +
+      `🚀 *Supported 1000+ sites powered by yt-dlp core!*`;
 
-    await ctx.reply(helpMsg, { parse_mode: 'Markdown' });
+    await ctx.reply(helpMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('🔙 Main Menu', 'show_menu')
+    });
   });
 
   // ─── Command: /stats ────────────────────────────────────────────────────────
@@ -109,22 +138,25 @@ export function setupBot(token: string): Bot {
     const secs = uptimeSec % 60;
     const memUsage = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
 
-    const statsMsg = `📊 **Bot System Statistics**\n\n` +
-      `⏱ **Uptime:** ${hours}h ${mins}m ${secs}s\n` +
-      `💾 **Memory Usage:** ${memUsage} MB\n` +
-      `💻 **Node Version:** ${process.version}\n` +
-      `📥 **Total Downloads:** ${totalDownloadsCount}\n` +
-      `🖥 **Platform:** ${os.type()} (${os.arch()})\n` +
-      `🟢 **Status:** Healthy & Active`;
+    const statsMsg = `📊 **EVERYTHING DOWNLOADER LIVE STATS** 📊\n\n` +
+      `⏱ **Uptime:** \`${hours}h ${mins}m ${secs}s\`\n` +
+      `💾 **RAM Usage:** \`${memUsage} MB\`\n` +
+      `📥 **Total Downloads:** \`${totalDownloadsCount}\`\n` +
+      `💻 **Node Engine:** \`${process.version}\`\n` +
+      `🖥 **OS Platform:** \`${os.type()} (${os.arch()})\`\n` +
+      `🟢 **System Health:** \`100% Operational\``;
 
-    await ctx.reply(statsMsg, { parse_mode: 'Markdown' });
+    await ctx.reply(statsMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: new InlineKeyboard().text('🔙 Main Menu', 'show_menu')
+    });
   });
 
   // ─── Command: /mp3 ──────────────────────────────────────────────────────────
   bot.command('mp3', async (ctx) => {
     const url = ctx.match?.trim();
     if (!url) {
-      return ctx.reply('⚠️ Please provide a URL!\nUsage: `/mp3 https://youtube.com/...`', { parse_mode: 'Markdown' });
+      return ctx.reply('⚠️ **Please provide a URL!**\nUsage: `/mp3 https://youtube.com/...`', { parse_mode: 'Markdown' });
     }
 
     try {
@@ -146,12 +178,12 @@ export function setupBot(token: string): Bot {
       const result = await downloader.downloadAudio(url, tempDir);
       await ctx.replyWithAudio(new InputFile(result.filePath), {
         title: result.title,
-        caption: `🎵 **${result.title}**\n⚡ *Extracted MP3 Audio*`,
+        caption: `🎧 **${result.title}**\n\n🎼 **Format:** High Quality MP3 Audio\n⚡ *Powered by Everything Downloader*`,
         parse_mode: 'Markdown'
       });
       totalDownloadsCount++;
     } catch (err: any) {
-      await ctx.reply(`❌ Failed to download audio: ${err.message}`);
+      await ctx.reply(`❌ **Audio Download Failed**\n\n📌 **Reason:** \`${err.message}\``, { parse_mode: 'Markdown' });
     } finally {
       clearInterval(actionInterval);
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -162,7 +194,7 @@ export function setupBot(token: string): Bot {
   bot.command('mp4', async (ctx) => {
     const url = ctx.match?.trim();
     if (!url) {
-      return ctx.reply('⚠️ Please provide a URL!\nUsage: `/mp4 https://youtube.com/...`', { parse_mode: 'Markdown' });
+      return ctx.reply('⚠️ **Please provide a URL!**\nUsage: `/mp4 https://youtube.com/...`', { parse_mode: 'Markdown' });
     }
 
     try {
@@ -183,12 +215,12 @@ export function setupBot(token: string): Bot {
     try {
       const result = await downloader.downloadVideo(url, tempDir);
       await ctx.replyWithVideo(new InputFile(result.filePath), {
-        caption: `🎥 **${result.title}**\n⚡ *Downloaded Video*`,
+        caption: `🎬 **${result.title}**\n\n📊 **Quality:** Full HD MP4 Video\n⚡ *Powered by Everything Downloader*`,
         parse_mode: 'Markdown'
       });
       totalDownloadsCount++;
     } catch (err: any) {
-      await ctx.reply(`❌ Failed to download video: ${err.message}`);
+      await ctx.reply(`❌ **Video Download Failed**\n\n📌 **Reason:** \`${err.message}\``, { parse_mode: 'Markdown' });
     } finally {
       clearInterval(actionInterval);
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -199,16 +231,19 @@ export function setupBot(token: string): Bot {
   bot.command('qr', async (ctx) => {
     const text = ctx.match?.trim();
     if (!text) {
-      return ctx.reply('⚠️ Usage: `/qr your text or link here`', { parse_mode: 'Markdown' });
+      return ctx.reply('⚠️ **Usage:** `/qr your text or link here`', { parse_mode: 'Markdown' });
     }
 
     try {
       const tempPath = path.join(os.tmpdir(), `qr_${Date.now()}.png`);
       await QRCode.toFile(tempPath, text, { width: 400 });
-      await ctx.replyWithPhoto(new InputFile(tempPath), { caption: `✅ QR Code generated for:\n\`${text}\``, parse_mode: 'Markdown' });
+      await ctx.replyWithPhoto(new InputFile(tempPath), {
+        caption: `✅ **QR Code Generated Successfully!**\n\n📌 **Content:** \`${text}\``,
+        parse_mode: 'Markdown'
+      });
       fs.unlinkSync(tempPath);
     } catch (err: any) {
-      await ctx.reply(`❌ QR Generation failed: ${err.message}`);
+      await ctx.reply(`❌ **QR Generation failed:** ${err.message}`);
     }
   });
 
@@ -219,7 +254,7 @@ export function setupBot(token: string): Bot {
     const matches = text.match(urlRegex);
 
     if (!matches || matches.length === 0) {
-      return ctx.reply("💡 Send me any valid link (YouTube, Instagram, TikTok, etc.) to download media!");
+      return ctx.reply("💡 **Need help?** Simply send me any video or music link from YouTube, Instagram, TikTok, etc.!");
     }
 
     const targetUrl = matches[0];
@@ -255,7 +290,7 @@ export function setupBot(token: string): Bot {
       if (videoRes.status === 'fulfilled') {
         currentAction = 'upload_video';
         await ctx.replyWithVideo(new InputFile(videoRes.value.filePath), {
-          caption: `🎥 **${videoRes.value.title}**\n⚡ *Downloaded via Everything Downloader*`,
+          caption: `🎬 **${videoRes.value.title}**\n\n📊 **Format:** High-Definition Video (MP4)\n⚡ *Powered by Everything Downloader*`,
           parse_mode: 'Markdown'
         });
         sentMedia = true;
@@ -267,7 +302,7 @@ export function setupBot(token: string): Bot {
         currentAction = 'upload_document';
         await ctx.replyWithAudio(new InputFile(audioRes.value.filePath), {
           title: audioRes.value.title,
-          caption: `🎵 **${audioRes.value.title}**\n⚡ *Extracted MP3 Audio*`,
+          caption: `🎧 **${audioRes.value.title}**\n\n🎼 **Format:** High-Quality MP3 Audio\n⚡ *Powered by Everything Downloader*`,
           parse_mode: 'Markdown'
         });
         sentMedia = true;
@@ -279,7 +314,7 @@ export function setupBot(token: string): Bot {
         throw new Error(errObj?.message || 'Failed to process media download.');
       }
     } catch (err: any) {
-      await ctx.reply(`❌ **Download Failed:** ${err.message || 'Unable to fetch media.'}`, { parse_mode: 'Markdown' });
+      await ctx.reply(`❌ **Download Failed**\n\n📌 **Reason:** \`${err.message || 'Unable to fetch media.'}\` \n\n💡 *Tip: Make sure the URL is public and accessible.*`, { parse_mode: 'Markdown' });
     } finally {
       clearInterval(actionInterval);
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -290,15 +325,78 @@ export function setupBot(token: string): Bot {
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
 
+    if (data === 'show_menu') {
+      await ctx.answerCallbackQuery();
+      const firstName = ctx.from?.first_name || 'User';
+      const welcomeMsg = getWelcomeMessageText(firstName);
+      const keyboard = getMainMenuKeyboard();
+      return ctx.editMessageText(welcomeMsg, { parse_mode: 'Markdown', reply_markup: keyboard }).catch(async () => {
+        await ctx.reply(welcomeMsg, { parse_mode: 'Markdown', reply_markup: keyboard });
+      });
+    }
+
     if (data === 'show_help') {
       await ctx.answerCallbackQuery();
-      return ctx.reply('📖 Use `/help` to view all features and usage examples.');
+      const helpMsg = `📖 **EVERYTHING DOWNLOADER USER GUIDE** 📖\n\n` +
+        `🎯 **How to Download Media:**\n` +
+        `1️⃣ Paste any URL directly into this chat.\n` +
+        `2️⃣ The bot will react with 👀 and process the link.\n` +
+        `3️⃣ Both high-definition **MP4 Video** and **MP3 Audio** will be delivered!\n\n` +
+        `📌 **Manual Commands:**\n` +
+        `• \`/mp3 <link>\` — Extract audio only\n` +
+        `• \`/mp4 <link>\` — Download video only\n` +
+        `• \`/qr <text>\` — Create custom QR code\n` +
+        `• \`/stats\` — View real-time system performance\n` +
+        `• \`/start\` — Open main interactive menu\n\n` +
+        `🚀 *Supported 1000+ sites powered by yt-dlp core!*`;
+      return ctx.editMessageText(helpMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard().text('🔙 Main Menu', 'show_menu')
+      }).catch(async () => {
+        await ctx.reply(helpMsg, { parse_mode: 'Markdown', reply_markup: new InlineKeyboard().text('🔙 Main Menu', 'show_menu') });
+      });
     }
 
     if (data === 'show_stats') {
       await ctx.answerCallbackQuery();
       const uptimeSec = Math.floor((Date.now() - botStartTime) / 1000);
-      return ctx.reply(`📊 **Bot Uptime:** ${uptimeSec}s | Downloads: ${totalDownloadsCount}`);
+      const hours = Math.floor(uptimeSec / 3600);
+      const mins = Math.floor((uptimeSec % 3600) / 60);
+      const secs = uptimeSec % 60;
+      const memUsage = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+
+      const statsMsg = `📊 **EVERYTHING DOWNLOADER LIVE STATS** 📊\n\n` +
+        `⏱ **Uptime:** \`${hours}h ${mins}m ${secs}s\`\n` +
+        `💾 **RAM Usage:** \`${memUsage} MB\`\n` +
+        `📥 **Total Downloads:** \`${totalDownloadsCount}\`\n` +
+        `💻 **Node Engine:** \`${process.version}\`\n` +
+        `🖥 **OS Platform:** \`${os.type()} (${os.arch()})\`\n` +
+        `🟢 **System Health:** \`100% Operational\``;
+
+      return ctx.editMessageText(statsMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard().text('🔙 Main Menu', 'show_menu')
+      }).catch(async () => {
+        await ctx.reply(statsMsg, { parse_mode: 'Markdown', reply_markup: new InlineKeyboard().text('🔙 Main Menu', 'show_menu') });
+      });
+    }
+
+    if (data === 'show_commands') {
+      await ctx.answerCallbackQuery();
+      const cmdMsg = `⚡ **QUICK COMMANDS REFERENCE** ⚡\n\n` +
+        `• \`/start\` — Launch main dashboard\n` +
+        `• \`/help\` — Open complete guide\n` +
+        `• \`/stats\` — Check live bot health\n` +
+        `• \`/mp3 <url>\` — Download audio track\n` +
+        `• \`/mp4 <url>\` — Download video clip\n` +
+        `• \`/qr <text>\` — Instant QR code generator`;
+
+      return ctx.editMessageText(cmdMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard().text('🔙 Main Menu', 'show_menu')
+      }).catch(async () => {
+        await ctx.reply(cmdMsg, { parse_mode: 'Markdown', reply_markup: new InlineKeyboard().text('🔙 Main Menu', 'show_menu') });
+      });
     }
 
     if (data.startsWith('dl_video:')) {
@@ -319,10 +417,13 @@ export function setupBot(token: string): Bot {
 
       try {
         const result = await downloader.downloadVideo(url, tempDir);
-        await ctx.replyWithVideo(new InputFile(result.filePath));
+        await ctx.replyWithVideo(new InputFile(result.filePath), {
+          caption: `🎬 **${result.title}**\n\n📊 **Quality:** Full HD MP4 Video\n⚡ *Powered by Everything Downloader*`,
+          parse_mode: 'Markdown'
+        });
         totalDownloadsCount++;
       } catch (err: any) {
-        await ctx.reply(`❌ Download failed: ${err.message}`);
+        await ctx.reply(`❌ **Download failed:** \`${err.message}\``, { parse_mode: 'Markdown' });
       } finally {
         clearInterval(actionInterval);
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -347,10 +448,14 @@ export function setupBot(token: string): Bot {
 
       try {
         const result = await downloader.downloadAudio(url, tempDir);
-        await ctx.replyWithAudio(new InputFile(result.filePath), { title: result.title });
+        await ctx.replyWithAudio(new InputFile(result.filePath), {
+          title: result.title,
+          caption: `🎧 **${result.title}**\n\n🎼 **Format:** High Quality MP3 Audio\n⚡ *Powered by Everything Downloader*`,
+          parse_mode: 'Markdown'
+        });
         totalDownloadsCount++;
       } catch (err: any) {
-        await ctx.reply(`❌ Extraction failed: ${err.message}`);
+        await ctx.reply(`❌ **Extraction failed:** \`${err.message}\``, { parse_mode: 'Markdown' });
       } finally {
         clearInterval(actionInterval);
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -367,19 +472,20 @@ export function setupBot(token: string): Bot {
       try {
         const info = await downloader.getInfo(url);
         const durationStr = info.duration ? `${Math.floor(info.duration / 60)}m ${info.duration % 60}s` : 'Unknown';
-        const msg = `ℹ️ **Media Information:**\n\n` +
+        const msg = `ℹ️ **MEDIA INFORMATION** ℹ️\n\n` +
           `📌 **Title:** ${info.title}\n` +
           `👤 **Uploader:** ${info.uploader || 'N/A'}\n` +
           `⏱ **Duration:** ${durationStr}\n` +
           `🌐 **Platform:** ${info.extractor || 'Web'}`;
         await ctx.reply(msg, { parse_mode: 'Markdown' });
       } catch (err: any) {
-        await ctx.reply(`❌ Could not fetch media info: ${err.message}`);
+        await ctx.reply(`❌ **Could not fetch media info:** \`${err.message}\``, { parse_mode: 'Markdown' });
       }
     }
   });
 
   return bot;
 }
+
 
 
