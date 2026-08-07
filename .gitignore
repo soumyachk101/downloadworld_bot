@@ -1,4 +1,5 @@
 node_modules/
+dist/
 .env
 cookies.txt
 instagram_cookies.txt
@@ -6,9 +7,6 @@ youtube_cookies.txt
 dl_*/
 .claude/
 *.log
-
-# Python cache
-__pycache__/
-*.py[cod]
 bot_stats.json
 cookies.json
+

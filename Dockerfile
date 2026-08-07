@@ -1,25 +1,29 @@
-FROM python:3.11-slim
+FROM node:20-slim
 
-# Install system dependencies
+# Install ffmpeg, python3, curl, and yt-dlp
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    python3 \
+    python3-pip \
     curl \
-    python3-dev \
-    gcc \
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy package files and install dependencies
+COPY package*.json ./
+RUN npm install
 
-# Copy the rest of the code
+# Copy application source
 COPY . .
 
-# Expose port for Render health check
+# Build TypeScript to JavaScript
+RUN npm run build
+
+# Expose port for Render / UptimeRobot health check
 EXPOSE 10000
 
-# Start the bot
-CMD ["python", "bot.py"]
+# Start Express server & Telegram bot
+CMD ["npm", "start"]
